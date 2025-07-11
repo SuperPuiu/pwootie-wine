@@ -558,6 +558,13 @@ BOOL WINAPI DECLSPEC_HOTPATCH VirtualProtect( void *addr, SIZE_T size, DWORD new
     return VirtualProtectEx( GetCurrentProcess(), addr, size, new_prot, old_prot );
 }
 
+/***********************************************************************
+ *             VirtualProtectFromApp   (kernelbase.@)
+ */
+BOOL WINAPI DECLSPEC_HOTPATCH VirtualProtectFromApp( void *addr, SIZE_T size, ULONG new_prot, ULONG *old_prot )
+{
+    return set_ntstatus( NtProtectVirtualMemory( GetCurrentProcess(), &addr, &size, new_prot, old_prot ));
+}
 
 /***********************************************************************
  *             VirtualProtectEx   (kernelbase.@)
