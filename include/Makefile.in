@@ -58,8 +58,10 @@ SOURCES = \
 	bits5_0.idl \
 	bitsmsg.h \
 	bluetoothapis.h \
+	bluetoothleapis.h \
 	bthdef.h \
 	bthioctl.h \
+	bthledef.h \
 	bthsdpdef.h \
 	cderr.h \
 	cdosys.idl \
@@ -196,6 +198,7 @@ SOURCES = \
 	dde.h \
 	dde.rh \
 	ddeml.h \
+	ddk/bthguid.h \
 	ddk/compstui.h \
 	ddk/csq.h \
 	ddk/d3dkmthk.h \

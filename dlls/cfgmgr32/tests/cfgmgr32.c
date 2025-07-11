@@ -541,14 +541,92 @@ static void test_CM_Get_Device_Interface_List(void)
     ok(ret == CR_NO_SUCH_DEVICE_INTERFACE || broken(ret == CR_INVALID_DATA) /* w7 */, "got %#lx.\n", ret);
 }
 
+struct test_property
+{
+    DEVPROPKEY key;
+    DEVPROPTYPE type;
+};
+
+DEFINE_DEVPROPKEY(DEVPKEY_dummy, 0xdeadbeef, 0xdead, 0xbeef, 0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef, 1);
+
+static void test_dev_object_iface_props( int line, const DEV_OBJECT *obj, const struct test_property *exp_props,
+                                         DWORD props_len )
+{
+    DWORD i, err, rem_props = props_len;
+    HDEVINFO set;
+
+    set = SetupDiCreateDeviceInfoListExW( NULL, NULL, NULL, NULL );
+    ok_( __FILE__, line )( set != INVALID_HANDLE_VALUE, "SetupDiCreateDeviceInfoListExW failed: %lu\n",
+                           GetLastError() );
+    ok_( __FILE__, line )( obj->cPropertyCount >= props_len, "got cPropertyCount %lu, should be >= %lu\n",
+                           obj->cPropertyCount, props_len );
+    for (i = 0; i < obj->cPropertyCount && rem_props; i++)
+    {
+        const DEVPROPERTY *property = &obj->pProperties[i];
+        ULONG j;
+
+        for (j = 0; j < props_len; j++)
+        {
+            if (IsEqualDevPropKey( property->CompKey.Key, exp_props[j].key ))
+            {
+                SP_INTERFACE_DEVICE_DATA iface_data = {0};
+                DEVPROPTYPE type = DEVPROP_TYPE_EMPTY;
+                ULONG size = 0;
+                CONFIGRET ret;
+                BYTE *buf;
+
+                winetest_push_context( "exp_props[%lu]", j );
+                rem_props--;
+                ok_( __FILE__, line )( property->Type == exp_props[j].type, "got type %#lx\n", property->Type );
+                /* Ensure the value matches the value retrieved via SetupDiGetDeviceInterfacePropertyW */
+                buf = calloc( property->BufferSize, 1 );
+                iface_data.cbSize = sizeof( iface_data );
+                ret = SetupDiOpenDeviceInterfaceW( set, obj->pszObjectId, 0, &iface_data );
+                err = GetLastError();
+                ok_( __FILE__, line )( ret || err == ERROR_NO_SUCH_DEVICE_INTERFACE, "SetupDiOpenDeviceInterfaceW failed: %lu\n", err );
+                if (!ret)
+                {
+                    winetest_pop_context();
+                    free( buf );
+                    continue;
+                }
+                ret = SetupDiGetDeviceInterfacePropertyW( set, &iface_data, &property->CompKey.Key, &type, buf,
+                                                          property->BufferSize, &size, 0 );
+                ok_( __FILE__, line )( ret, "SetupDiGetDeviceInterfacePropertyW failed: %lu\n", GetLastError() );
+                SetupDiDeleteDeviceInterfaceData( set, &iface_data );
+
+                ok_( __FILE__, line )( size == property->BufferSize, "got size %lu\n", size );
+                ok_( __FILE__, line )( type == property->Type, "got type %#lx\n", type );
+                if (size == property->BufferSize)
+                {
+                    switch (type)
+                    {
+                    case DEVPROP_TYPE_STRING:
+                        ok_( __FILE__, line )( !wcsicmp( (WCHAR *)buf, (WCHAR *)property->Buffer ),
+                                               "got instance id %s != %s\n", debugstr_w( (WCHAR *)buf ),
+                                               debugstr_w( (WCHAR *)property->Buffer ) );
+                        break;
+                    default:
+                        ok_( __FILE__, line )( !memcmp( buf, property->Buffer, size ),
+                                               "got mistmatching property values\n" );
+                        break;
+                    }
+                }
+                free( buf );
+                winetest_pop_context();
+                break;
+            }
+        }
+    }
+    ok_( __FILE__, line )( rem_props == 0, "got rem %lu != 0\n", rem_props );
+    SetupDiDestroyDeviceInfoList( set );
+}
+
 static void test_DevGetObjects( void )
 {
     struct {
         DEV_OBJECT_TYPE object_type;
-        struct {
-            DEVPROPKEY key;
-            DEVPROPTYPE type;
-        } exp_props[3];
+        struct test_property exp_props[3];
         ULONG props_len;
     } test_cases[] = {
         {
@@ -571,7 +649,7 @@ static void test_DevGetObjects( void )
         },
     };
     const DEV_OBJECT *objects = NULL;
-    HDEVINFO set;
+    DEVPROPCOMPKEY prop_key = {0};
     HRESULT hr;
     ULONG i, len = 0;
 
@@ -596,6 +674,13 @@ static void test_DevGetObjects( void )
     hr = DevGetObjects( DevObjectTypeDeviceInterface, 0xdeadbeef, 0, NULL, 0, (void *)0xdeadbeef, &len, &objects );
     ok( hr == E_INVALIDARG, "got hr %#lx\n", hr );
 
+    prop_key.Key = test_cases[0].exp_props[0].key;
+    prop_key.Store = DEVPROP_STORE_SYSTEM;
+    prop_key.LocaleName = NULL;
+    /* DevQueryFlagAllProperties is mutually exlusive with requesting specific properties. */
+    hr = DevGetObjects( DevObjectTypeDeviceInterface, DevQueryFlagAllProperties, 1, &prop_key, 0, NULL, &len, &objects );
+    ok( hr == E_INVALIDARG, "got hr %#lx\n", hr );
+
     len = 0xdeadbeef;
     objects = (DEV_OBJECT *)0xdeadbeef;
     hr = DevGetObjects( DevObjectTypeUnknown, DevQueryFlagNone, 0, NULL, 0, NULL, &len, &objects );
@@ -610,14 +695,12 @@ static void test_DevGetObjects( void )
     ok( len == 0, "got len %lu\n", len );
     ok( !objects, "got objects %p\n", objects );
 
-    set = SetupDiCreateDeviceInfoListExW( NULL, NULL, NULL, NULL );
-    ok( set != INVALID_HANDLE_VALUE, "SetupDiCreateDeviceInfoListExW failed: %lu\n", GetLastError() );
-
     for (i = 0; i < ARRAY_SIZE( test_cases ); i++)
     {
         const DEV_OBJECT *objects = NULL;
         ULONG j, len = 0;
 
+        /* Get all objects of this type, with all properties. */
         objects = NULL;
         len = 0;
         winetest_push_context( "test_cases[%lu]", i );
@@ -625,71 +708,216 @@ static void test_DevGetObjects( void )
         ok( hr == S_OK, "got hr %#lx\n", hr );
         for (j = 0; j < len; j++)
         {
-            ULONG rem_props = test_cases[i].props_len, k;
             const DEV_OBJECT *obj = &objects[j];
 
             winetest_push_context( "device %s", debugstr_w( obj->pszObjectId ) );
             ok( obj->ObjectType == test_cases[i].object_type, "got ObjectType %d\n", obj->ObjectType );
-            todo_wine ok( obj->cPropertyCount >= test_cases[i].props_len, "got cPropertyCount %lu, should be >= %lu\n",
-                          obj->cPropertyCount, test_cases[i].props_len );
-            for (k = 0; k < obj->cPropertyCount && rem_props; k++)
+            test_dev_object_iface_props( __LINE__, obj, test_cases[i].exp_props, test_cases[i].props_len );
+            winetest_pop_context();
+        }
+        DevFreeObjects( len, objects );
+
+
+        /* Get all objects of this type, but only with a single requested property. */
+        for (j = 0; j < test_cases[i].props_len; j++)
+        {
+            const struct test_property *prop = &test_cases[i].exp_props[j];
+            ULONG k;
+
+            winetest_push_context( "exp_props[%lu]", j );
+            objects = NULL;
+            len = 0;
+            prop_key.Key = prop->key;
+            prop_key.LocaleName = NULL;
+            prop_key.Store = DEVPROP_STORE_SYSTEM;
+            hr = DevGetObjects( test_cases[i].object_type, 0, 1, &prop_key, 0, NULL, &len, &objects );
+            ok( hr == S_OK, "got hr %#lx\n", hr );
+            ok( len, "got buf_len %lu\n", len );
+            ok( !!objects, "got objects %p\n", objects );
+            for (k = 0; k < len; k++)
             {
-                const DEVPROPERTY *property = &obj->pProperties[k];
-                ULONG l;
+                const DEV_OBJECT *obj = &objects[k];
 
-                for (l = 0; l < test_cases[i].props_len; l++)
-                {
-                    if (IsEqualDevPropKey( property->CompKey.Key, test_cases[i].exp_props[l].key ))
-                    {
-                        SP_INTERFACE_DEVICE_DATA iface_data = {0};
-                        DEVPROPTYPE type = DEVPROP_TYPE_EMPTY;
-                        ULONG size = 0;
-                        CONFIGRET ret;
-                        BYTE *buf;
-
-                        winetest_push_context( "exp_props[%lu]", l );
-                        rem_props--;
-                        ok( property->Type == test_cases[i].exp_props[l].type, "got type %#lx\n", property->Type );
-
-                        /* Ensure the value matches the value retrieved via SetupDiGetDeviceInterfacePropertyW */
-                        buf = calloc( property->BufferSize, 1 );
-                        iface_data.cbSize = sizeof( iface_data );
-                        ret = SetupDiOpenDeviceInterfaceW( set, obj->pszObjectId, 0, &iface_data );
-                        ok( ret, "SetupDiOpenDeviceInterfaceW failed: %lu\n", GetLastError() );
-                        ret = SetupDiGetDeviceInterfacePropertyW( set, &iface_data, &property->CompKey.Key, &type, buf,
-                                                                  property->BufferSize, &size, 0 );
-                        ok( ret, "SetupDiGetDeviceInterfacePropertyW failed: %lu\n", GetLastError() );
-                        SetupDiDeleteDeviceInterfaceData( set, &iface_data );
-
-                        ok( size == property->BufferSize, "got size %lu\n", size );
-                        ok( type == property->Type, "got type %#lx\n", type );
-                        if (size == property->BufferSize)
-                        {
-                            switch (type)
-                            {
-                            case DEVPROP_TYPE_STRING:
-                                ok( !wcsicmp( (WCHAR *)buf, (WCHAR *)property->Buffer ), "got instance id %s != %s\n",
-                                    debugstr_w( (WCHAR *)buf ), debugstr_w( (WCHAR *)property->Buffer ) );
-                                break;
-                            default:
-                                ok( !memcmp( buf, property->Buffer, size ), "got mistmatching property values\n" );
-                                break;
-                            }
-                        }
-                        free( buf );
-                        winetest_pop_context();
-                        break;
-                    }
-                }
+                winetest_push_context( "objects[%lu]", k );
+                ok( obj->cPropertyCount == 1, "got cPropertyCount %lu != 1\n", obj->cPropertyCount );
+                ok( !!obj->pProperties, "got pProperties %p\n", obj->pProperties );
+                if (obj->pProperties)
+                    ok( IsEqualDevPropKey( obj->pProperties[0].CompKey.Key, prop->key ), "got property {%s, %#lx} != {%s, %#lx}\n",
+                        debugstr_guid( &obj->pProperties[0].CompKey.Key.fmtid ), obj->pProperties[0].CompKey.Key.pid,
+                        debugstr_guid( &prop->key.fmtid ), prop->key.pid );
+                winetest_pop_context();
             }
-            todo_wine ok( rem_props == 0, "got rem %lu != 0\n", rem_props );
+            DevFreeObjects( len, objects );
             winetest_pop_context();
         }
         winetest_pop_context();
+
+        /* Get all objects of this type, but with a non existent property. The returned objects will still have this
+         * property, albeit with Type set to DEVPROP_TYPE_EMPTY. */
+        len = 0;
+        objects = NULL;
+        prop_key.Key = DEVPKEY_dummy;
+        hr = DevGetObjects( test_cases[i].object_type, 0, 1, &prop_key, 0, NULL, &len, &objects );
+        ok( hr == S_OK, "got hr %#lx\n", hr );
+        ok( len, "got len %lu\n", len );
+        ok( !!objects, "got objects %p\n", objects );
+        for (j = 0; j < len; j++)
+        {
+            const DEV_OBJECT *obj = &objects[j];
+
+            winetest_push_context( "objects[%lu]", j );
+            ok( obj->cPropertyCount == 1, "got cPropertyCount %lu != 1\n", obj->cPropertyCount );
+            ok( !!obj->pProperties, "got pProperties %p\n", obj->pProperties );
+            if (obj->pProperties)
+            {
+                ok( IsEqualDevPropKey( obj->pProperties[0].CompKey.Key, DEVPKEY_dummy ),
+                    "got property {%s, %#lx} != {%s, %#lx}\n", debugstr_guid( &obj->pProperties[0].CompKey.Key.fmtid ),
+                    obj->pProperties[0].CompKey.Key.pid, debugstr_guid( &DEVPKEY_dummy.fmtid ), DEVPKEY_dummy.pid );
+                ok( obj->pProperties[0].Type == DEVPROP_TYPE_EMPTY, "got Type %#lx != %#x", obj->pProperties[0].Type,
+                    DEVPROP_TYPE_EMPTY );
+            }
+            winetest_pop_context();
+        }
         DevFreeObjects( len, objects );
     }
+}
 
-    SetupDiDestroyDeviceInfoList( set );
+struct query_callback_data
+{
+    int line;
+    DEV_OBJECT_TYPE exp_type;
+    const struct test_property *exp_props;
+    DWORD props_len;
+
+    HANDLE enum_completed;
+    HANDLE closed;
+};
+
+static void WINAPI query_result_callback( HDEVQUERY query, void *user_data, const DEV_QUERY_RESULT_ACTION_DATA *action_data )
+{
+    struct query_callback_data *data = user_data;
+
+    ok( !!data, "got null user_data\n" );
+    if (!data) return;
+
+    switch (action_data->Action)
+    {
+    case DevQueryResultStateChange:
+    {
+        DEV_QUERY_STATE state = action_data->Data.State;
+        ok( state == DevQueryStateEnumCompleted || state == DevQueryStateClosed,
+            "got unexpected Data.State value: %d\n", state );
+        switch (state)
+        {
+        case DevQueryStateEnumCompleted:
+            SetEvent( data->enum_completed );
+            break;
+        case DevQueryStateClosed:
+            SetEvent( data->closed );
+        default:
+            break;
+        }
+        break;
+    }
+    case DevQueryResultAdd:
+    {
+        const DEV_OBJECT *obj = &action_data->Data.DeviceObject;
+        winetest_push_context( "device %s", debugstr_w( obj->pszObjectId ) );
+        ok_( __FILE__, data->line )( obj->ObjectType == data->exp_type, "got DeviceObject.ObjectType %d != %d",
+                                     obj->ObjectType, data->exp_type );
+        test_dev_object_iface_props( data->line, &action_data->Data.DeviceObject, data->exp_props, data->props_len );
+        winetest_pop_context();
+        break;
+    }
+    default:
+        ok( action_data->Action == DevQueryResultUpdate || action_data->Action == DevQueryResultRemove,
+            "got unexpected Action %d\n", action_data->Action );
+        break;
+    }
+}
+
+#define call_DevCreateObjectQuery( a, b, c, d, e, f, g, h, i ) \
+    call_DevCreateObjectQuery_(__LINE__, (a), (b), (c), (d), (e), (f), (g), (h), (i))
+
+static HRESULT call_DevCreateObjectQuery_( int line, DEV_OBJECT_TYPE type, ULONG flags, ULONG props_len,
+                                           const DEVPROPCOMPKEY *props, ULONG filters_len,
+                                           const DEVPROP_FILTER_EXPRESSION *filters, PDEV_QUERY_RESULT_CALLBACK callback,
+                                           struct query_callback_data *data, HDEVQUERY *devquery )
+{
+    data->line = line;
+    return DevCreateObjectQuery( type, flags, props_len, props, filters_len, filters, callback, data, devquery );
+}
+
+static void test_DevCreateObjectQuery( void )
+{
+    struct test_property iface_props[3] = {
+        { DEVPKEY_DeviceInterface_ClassGuid, DEVPROP_TYPE_GUID },
+        { DEVPKEY_DeviceInterface_Enabled, DEVPROP_TYPE_BOOLEAN },
+        { DEVPKEY_Device_InstanceId, DEVPROP_TYPE_STRING }
+    };
+    struct query_callback_data data = {0};
+    HDEVQUERY query = NULL;
+    HRESULT hr;
+    DWORD ret;
+
+    hr = DevCreateObjectQuery( DevObjectTypeDeviceInterface, 0, 0, NULL, 0, NULL, NULL, NULL, &query );
+    ok( hr == E_INVALIDARG, "got hr %#lx\n", hr );
+    ok( !query, "got query %p\n", query );
+
+    hr = DevCreateObjectQuery( DevObjectTypeDeviceInterface, 0xdeadbeef, 0, NULL, 0, NULL, query_result_callback,
+                               NULL, &query );
+    ok( hr == E_INVALIDARG, "got hr %#lx\n", hr );
+    ok( !query, "got query %p\n", query );
+
+    data.enum_completed = CreateEventW( NULL, FALSE, FALSE, NULL );
+    data.closed = CreateEventW( NULL, FALSE, FALSE, NULL );
+
+    hr = call_DevCreateObjectQuery( DevObjectTypeUnknown, 0, 0, NULL, 0, NULL, &query_result_callback, &data, &query );
+    ok( hr == S_OK, "got hr %#lx\n", hr );
+    ret = WaitForSingleObject( data.enum_completed, 1000 );
+    ok( !ret, "got ret %lu\n", ret );
+    DevCloseObjectQuery( query );
+
+    hr = call_DevCreateObjectQuery( 0xdeadbeef, 0, 0, NULL, 0, NULL, &query_result_callback, &data, &query );
+    ok( hr == S_OK, "got hr %#lx\n", hr );
+    ret = WaitForSingleObject( data.enum_completed, 1000 );
+    ok( !ret, "got ret %lu\n", ret );
+    DevCloseObjectQuery( query );
+
+    hr = call_DevCreateObjectQuery( DevObjectTypeUnknown, DevQueryFlagAsyncClose, 0, NULL, 0, NULL, &query_result_callback,
+                                    &data, &query );
+    ok( hr == S_OK, "got hr %#lx\n", hr );
+    ret = WaitForSingleObject( data.enum_completed, 1000 );
+    ok( !ret, "got ret %lu\n", ret );
+    DevCloseObjectQuery( query );
+    ret = WaitForSingleObject( data.closed, 1000 );
+    ok( !ret, "got ret %lu\n", ret );
+
+    data.exp_props = iface_props;
+    data.props_len = ARRAY_SIZE( iface_props );
+
+    data.exp_type = DevObjectTypeDeviceInterface;
+    hr = call_DevCreateObjectQuery( DevObjectTypeDeviceInterface, DevQueryFlagAllProperties | DevQueryFlagAsyncClose, 0,
+                                    NULL, 0, NULL, &query_result_callback, &data, &query );
+    ok( hr == S_OK, "got hr %#lx\n", hr );
+    ret = WaitForSingleObject( data.enum_completed, 5000 );
+    ok( !ret, "got ret %lu\n", ret );
+    DevCloseObjectQuery( query );
+    ret = WaitForSingleObject( data.closed, 1000 );
+    ok( !ret, "got ret %lu\n", ret );
+
+    data.exp_type = DevObjectTypeDeviceInterfaceDisplay;
+    hr = call_DevCreateObjectQuery( DevObjectTypeDeviceInterfaceDisplay, DevQueryFlagAllProperties | DevQueryFlagAsyncClose,
+                                    0, NULL, 0, NULL, &query_result_callback, &data, &query );
+    ok( hr == S_OK, "got hr %#lx\n", hr );
+    ret = WaitForSingleObject( data.enum_completed, 5000 );
+    ok( !ret, "got ret %lu\n", ret );
+    DevCloseObjectQuery( query );
+    ret = WaitForSingleObject( data.closed, 1000 );
+    ok( !ret, "got ret %lu\n", ret );
+
+    CloseHandle( data.enum_completed );
+    CloseHandle( data.closed );
 }
 
 START_TEST(cfgmgr32)
@@ -699,4 +927,5 @@ START_TEST(cfgmgr32)
     test_CM_Register_Notification();
     test_CM_Get_Device_Interface_List();
     test_DevGetObjects();
+    test_DevCreateObjectQuery();
 }
