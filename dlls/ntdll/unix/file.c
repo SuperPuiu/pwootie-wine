@@ -238,6 +238,9 @@ static unsigned int dir_data_cache_size;
 static BOOL show_dot_files;
 static mode_t start_umask;
 
+static const WCHAR nt_prefixW[] = {'\\','?','?','\\'};
+static const WCHAR dos_prefixW[] = {'\\','?','?','\\','A',':','\\'};
+static const WCHAR unc_prefixW[] = {'\\','?','?','\\','U','N','C','\\'};
 static const WCHAR unix_prefixW[] = {'\\','?','?','\\','u','n','i','x'};
 
 /* at some point we may want to allow Winelib apps to set this */
@@ -3281,7 +3284,6 @@ failed:
 /* return the length of the DOS namespace prefix if any */
 static inline int get_dos_prefix_len( const UNICODE_STRING *name )
 {
-    static const WCHAR nt_prefixW[] = {'\\','?','?','\\'};
     static const WCHAR dosdev_prefixW[] = {'\\','D','o','s','D','e','v','i','c','e','s','\\'};
 
     if (name->Length >= sizeof(nt_prefixW) &&
@@ -3763,51 +3765,6 @@ static NTSTATUS nt_to_unix_file_name( const OBJECT_ATTRIBUTES *attr, char **name
 }
 
 
-/******************************************************************************
- *           wine_nt_to_unix_file_name
- *
- * Convert a file name from NT namespace to Unix namespace.
- *
- * If disposition is not FILE_OPEN or FILE_OVERWRITE, the last path
- * element doesn't have to exist; in that case STATUS_NO_SUCH_FILE is
- * returned, but the unix name is still filled in properly.
- */
-NTSTATUS WINAPI wine_nt_to_unix_file_name( const OBJECT_ATTRIBUTES *attr, char *nameA, ULONG *size,
-                                          UINT disposition )
-{
-    char *buffer = NULL;
-    NTSTATUS status;
-    UNICODE_STRING nt_name;
-    OBJECT_ATTRIBUTES new_attr = *attr;
-
-    status = get_nt_and_unix_names( &new_attr, &nt_name, &buffer, disposition );
-    if (!status || status == STATUS_NO_SUCH_FILE)
-    {
-        struct stat st1, st2;
-        char *name = buffer;
-
-        /* remove dosdevices prefix for z: drive if it points to the Unix root */
-        if (!strncmp( buffer, config_dir, strlen(config_dir) ) &&
-            !strncmp( buffer + strlen(config_dir), "/dosdevices/z:/", 15 ))
-        {
-            char *p = buffer + strlen(config_dir) + 14;
-            *p = 0;
-            if (!stat( buffer, &st1 ) && !stat( "/", &st2 ) &&
-                st1.st_dev == st2.st_dev && st1.st_ino == st2.st_ino)
-                name = p;
-            *p = '/';
-        }
-
-        if (*size > strlen(name)) strcpy( nameA, name );
-        else status = STATUS_BUFFER_TOO_SMALL;
-        *size = strlen(name) + 1;
-    }
-    free( buffer );
-    free( nt_name.Buffer );
-    return status;
-}
-
-
 /******************************************************************
  *		collapse_path
  *
@@ -3893,7 +3850,6 @@ static WCHAR *collapse_path( WCHAR *path )
 static NTSTATUS find_drive_nt_root( char *unix_name, unsigned int len,
                                     WCHAR **nt_name, UINT disposition )
 {
-    static const WCHAR dos_prefixW[] = {'\\','?','?','\\','A',':','\\'};
     unsigned int i, pos, lenW;
     WCHAR *buffer;
     NTSTATUS status = STATUS_SUCCESS;
@@ -4058,9 +4014,6 @@ NTSTATUS get_nt_and_unix_names( OBJECT_ATTRIBUTES *attr, UNICODE_STRING *nt_name
  */
 NTSTATUS get_full_path( char *name, const WCHAR *curdir, UNICODE_STRING *nt_name )
 {
-    static const WCHAR uncW[] = {'\\','?','?','\\','U','N','C','\\'};
-    static const WCHAR devW[] = {'\\','?','?','\\'};
-    static const WCHAR rootW[] = {'\\','?','?','\\','C',':','\\'};
     WCHAR *ret;
     ULONG prefix_len, len = max( ARRAY_SIZE(unix_prefixW), wcslen(curdir) ) + strlen(name) + 1;
 
@@ -4078,26 +4031,26 @@ NTSTATUS get_full_path( char *name, const WCHAR *curdir, UNICODE_STRING *nt_name
         if ((name[2] == '.' || name[2] == '?') && IS_SEPARATOR(name[3])) /* \\?\ device */
         {
             name += 4;
-            memcpy( ret, devW, sizeof(devW) );
-            prefix_len = ARRAY_SIZE(devW);
+            memcpy( ret, nt_prefixW, sizeof(nt_prefixW) );
+            prefix_len = ARRAY_SIZE(nt_prefixW);
         }
         else  /* UNC path */
         {
             name += 2;
-            memcpy( ret, uncW, sizeof(uncW) );
-            prefix_len = ARRAY_SIZE(uncW);
+            memcpy( ret, unc_prefixW, sizeof(unc_prefixW) );
+            prefix_len = ARRAY_SIZE(unc_prefixW);
         }
     }
     else if (IS_SEPARATOR(name[0]))  /* absolute path */
     {
-        memcpy( ret, rootW, sizeof(rootW) );
-        prefix_len = ARRAY_SIZE(rootW);
+        memcpy( ret, dos_prefixW, sizeof(dos_prefixW) );
+        prefix_len = ARRAY_SIZE(dos_prefixW);
         ret[4] = curdir[4];
     }
     else if (name[0] && name[1] == ':')  /* drive letter */
     {
-        memcpy( ret, rootW, sizeof(rootW) );
-        prefix_len = ARRAY_SIZE(rootW);
+        memcpy( ret, dos_prefixW, sizeof(dos_prefixW) );
+        prefix_len = ARRAY_SIZE(dos_prefixW);
         ret[4] = towupper(name[0]);
         name += 2;
     }
@@ -4112,6 +4065,85 @@ NTSTATUS get_full_path( char *name, const WCHAR *curdir, UNICODE_STRING *nt_name
  done:
     init_unicode_string( nt_name, ret );
     return STATUS_SUCCESS;
+}
+
+
+/***********************************************************************
+ *           get_nt_path
+ *
+ * Simplified version of RtlDosPathNameToNtPathName_U.
+ */
+NTSTATUS get_nt_path( const WCHAR *name, UNICODE_STRING *nt_name )
+{
+    ULONG len = wcslen( name );
+    WCHAR *ret, *p;
+
+    nt_name->Buffer = NULL;
+    if (!(ret = p = malloc( (len + 8) * sizeof(WCHAR) ))) return STATUS_NO_MEMORY;
+
+    if (name[0] == '\\' && name[1] == '\\')
+    {
+        if ((name[2] == '.' || name[2] == '?') && name[3] == '\\')
+        {
+            memcpy( p, nt_prefixW, sizeof(nt_prefixW) );
+            p += ARRAY_SIZE( nt_prefixW );
+            name += 4;
+        }
+        else
+        {
+            memcpy( p, unc_prefixW, sizeof(unc_prefixW) );
+            p += ARRAY_SIZE( unc_prefixW );
+            name += 2;
+        }
+    }
+    else if (wcsncmp( name, nt_prefixW, ARRAY_SIZE(nt_prefixW) ))
+    {
+        memcpy( p, nt_prefixW, sizeof(nt_prefixW) );
+        p += ARRAY_SIZE( nt_prefixW );
+    }
+    wcscpy( p, name );
+    collapse_path( ret );
+    init_unicode_string( nt_name, ret );
+    return STATUS_SUCCESS;
+}
+
+
+/***********************************************************************
+ *           ntdll_get_unix_file_name
+ */
+NTSTATUS ntdll_get_unix_file_name( const WCHAR *dos, char **unix_name, UINT disposition )
+{
+    UNICODE_STRING nt_name, true_nt_name;
+    OBJECT_ATTRIBUTES attr;
+    char *buffer = NULL;
+    NTSTATUS status = get_nt_path( dos, &nt_name );
+
+    if (status) return status;
+    InitializeObjectAttributes( &attr, &nt_name, 0, 0, NULL );
+    status = get_nt_and_unix_names( &attr, &true_nt_name, &buffer, disposition );
+    free( nt_name.Buffer );
+    free( true_nt_name.Buffer );
+
+    if (!status || status == STATUS_NO_SUCH_FILE)
+    {
+        /* remove dosdevices prefix for z: drive if it points to the Unix root */
+        if (!strncmp( buffer, config_dir, strlen(config_dir) ) &&
+            !strncmp( buffer + strlen(config_dir), "/dosdevices/z:/", 15 ))
+        {
+            struct stat st1, st2;
+            BOOL is_root;
+            char *p = buffer + strlen(config_dir) + 14;
+            *p = 0;
+            is_root = !stat( buffer, &st1 ) && !stat( "/", &st2 ) &&
+                      st1.st_dev == st2.st_dev && st1.st_ino == st2.st_ino;
+            *p = '/';
+            if (is_root) memmove( buffer, p, strlen(p) + 1 );
+        }
+        *unix_name = buffer;
+    }
+    else free( buffer );
+
+    return status;
 }
 
 
@@ -4576,6 +4608,8 @@ NTSTATUS WINAPI NtQueryInformationFile( HANDLE handle, IO_STATUS_BLOCK *io,
 
     io->Information = 0;
 
+    if (class == WineFileUnixNameInformation)
+        return server_get_file_info( handle, io, ptr, len, class );
     if (class <= 0 || class >= FileMaximumInformation)
         return io->Status = STATUS_INVALID_INFO_CLASS;
     if (!info_sizes[class])

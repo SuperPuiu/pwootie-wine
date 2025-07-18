@@ -924,7 +924,7 @@ case $host_os in
     LDDLLFLAGS="-fPIC"
     enable_winemac_drv=${enable_winemac_drv:-yes}
     dnl declare needed frameworks
-    AC_SUBST(CARBON_LIBS,"-framework Carbon")
+    AC_SUBST(CORETEXT_LIBS,"-framework CoreText")
     AC_SUBST(COREFOUNDATION_LIBS,"-framework CoreFoundation")
     AC_SUBST(DISKARBITRATION_LIBS,"-framework DiskArbitration -framework CoreFoundation")
     AC_SUBST(IOKIT_LIBS,"-framework IOKit -framework CoreFoundation")
@@ -1977,7 +1977,7 @@ then
                CFLAGS=$saved_CFLAGS
            fi])])
   case "$wine_cv_64bit_compare_swap" in
-      unknown) AC_MSG_ERROR([gcc doesn't support 64-bit compare-and-swap on this platform]) ;;
+      unknown) AC_MSG_ERROR([64-bit compare-and-swap is not supported on this platform]) ;;
       "none needed") ;;
       *) EXTRACFLAGS="$EXTRACFLAGS $wine_cv_64bit_compare_swap" ;;
   esac

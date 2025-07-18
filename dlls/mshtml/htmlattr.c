@@ -51,7 +51,7 @@ static HRESULT WINAPI HTMLDOMAttribute_get_nodeName(IHTMLDOMAttribute *iface, BS
             return E_FAIL;
         }
 
-        *p = SysAllocString(This->name);
+        *p = SysAllocStringLen(This->name, SysStringLen(This->name));
         return *p ? S_OK : E_OUTOFMEMORY;
     }
 
@@ -87,15 +87,15 @@ static HRESULT WINAPI HTMLDOMAttribute_get_nodeValue(IHTMLDOMAttribute *iface, V
 static HRESULT WINAPI HTMLDOMAttribute_get_specified(IHTMLDOMAttribute *iface, VARIANT_BOOL *p)
 {
     HTMLDOMAttribute *This = impl_from_IHTMLDOMAttribute(iface);
-    nsIDOMAttr *nsattr;
     nsAString nsname;
     nsresult nsres;
+    cpp_bool r;
 
     TRACE("(%p)->(%p)\n", This, p);
 
     if(!This->elem || !This->elem->dom_element) {
-        FIXME("NULL This->elem\n");
-        return E_UNEXPECTED;
+        *p = VARIANT_FALSE;
+        return S_OK;
     }
 
     if(get_dispid_type(This->dispid) != DISPEXPROP_BUILTIN) {
@@ -105,19 +105,10 @@ static HRESULT WINAPI HTMLDOMAttribute_get_specified(IHTMLDOMAttribute *iface, V
 
     /* FIXME: This is not exactly right, we have some attributes that don't map directly to Gecko attributes. */
     nsAString_InitDepend(&nsname, dispex_builtin_prop_name(&This->elem->node.event_target.dispex, This->dispid));
-    nsres = nsIDOMElement_GetAttributeNode(This->elem->dom_element, &nsname, &nsattr);
+    nsres = nsIDOMElement_HasAttribute(This->elem->dom_element, &nsname, &r);
     nsAString_Finish(&nsname);
-    if(NS_FAILED(nsres))
-        return E_FAIL;
 
-    /* If the Gecko attribute node can be found, we know that the attribute is specified.
-       There is no point in calling GetSpecified */
-    if(nsattr) {
-        nsIDOMAttr_Release(nsattr);
-        *p = VARIANT_TRUE;
-    }else {
-        *p = VARIANT_FALSE;
-    }
+    *p = variant_bool(NS_SUCCEEDED(nsres) && r);
     return S_OK;
 }
 
@@ -353,17 +344,26 @@ static HRESULT WINAPI HTMLDOMAttribute2_cloneNode(IHTMLDOMAttribute2 *iface, VAR
     HTMLDOMAttribute *This = impl_from_IHTMLDOMAttribute2(iface);
     HTMLDOMAttribute *new_attr;
     HRESULT hres;
+    BSTR name;
 
     TRACE("(%p)->(%x %p)\n", This, fDeep, clonedNode);
 
-    hres = HTMLDOMAttribute_Create(This->name, NULL, 0, This->doc, &new_attr);
-    if(FAILED(hres))
-        return hres;
-
-    if(This->elem)
+    if(This->elem) {
+        hres = dispex_prop_name(&This->elem->node.event_target.dispex, This->dispid, &name);
+        if(FAILED(hres))
+            return hres;
+        hres = HTMLDOMAttribute_Create(name, NULL, 0, This->doc, &new_attr);
+        SysFreeString(name);
+        if(FAILED(hres))
+            return hres;
         hres = get_elem_attr_value_by_dispid(This->elem, This->dispid, &new_attr->value);
-    else
+    }else {
+        hres = HTMLDOMAttribute_Create(This->name, NULL, 0, This->doc, &new_attr);
+        if(FAILED(hres))
+            return hres;
         hres = VariantCopy(&new_attr->value, &This->value);
+    }
+
     if(FAILED(hres)) {
         IHTMLDOMAttribute_Release(&new_attr->IHTMLDOMAttribute_iface);
         return hres;
@@ -537,7 +537,7 @@ static void HTMLDOMAttribute_destructor(DispatchEx *dispex)
 {
     HTMLDOMAttribute *This = impl_from_DispatchEx(dispex);
     VariantClear(&This->value);
-    free(This->name);
+    SysFreeString(This->name);
     free(This);
 }
 
@@ -609,7 +609,7 @@ HRESULT HTMLDOMAttribute_Create(const WCHAR *name, HTMLElement *elem, DISPID dis
 
     /* For detached attributes we may still do most operations if we have its name available. */
     if(name) {
-        ret->name = wcsdup(name);
+        ret->name = SysAllocString(name);
         if(!ret->name) {
             IHTMLDOMAttribute_Release(&ret->IHTMLDOMAttribute_iface);
             return E_OUTOFMEMORY;
