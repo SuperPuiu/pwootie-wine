@@ -3863,18 +3863,16 @@ static void test_attr_collection_disp(IDispatch *disp, LONG len, IHTMLElement *e
 
 static void test_attr_collection(IHTMLElement *elem)
 {
-    static const WCHAR testW[] = {'t','e','s','t',0};
-
-    IHTMLDOMNode *node;
-    IDispatch *disp, *attr;
     IHTMLAttributeCollection *attr_col;
-    BSTR name = SysAllocString(testW);
+    IDispatch *disp, *attr;
     IEnumVARIANT *enum_var;
+    LONG i, len, checked;
+    IHTMLDOMNode *node;
     IUnknown *enum_unk;
     VARIANT id, val;
-    LONG i, len, checked;
     ULONG fetched;
     HRESULT hres;
+    BSTR name;
 
     hres = IHTMLElement_QueryInterface(elem, &IID_IHTMLDOMNode, (void**)&node);
     ok(hres == S_OK, "QueryInterface failed: %08lx\n", hres);
@@ -3893,9 +3891,11 @@ static void test_attr_collection(IHTMLElement *elem)
 
     hres = IHTMLAttributeCollection_get_length(attr_col, &i);
     ok(hres == S_OK, "get_length failed: %08lx\n", hres);
+    ok(i > 3, "length = %ld\n", i);
 
     V_VT(&val) = VT_I4;
     V_I4(&val) = 1;
+    name = SysAllocString(L"test");
     hres = IHTMLElement_setAttribute(elem, name, val, 0);
     ok(hres == S_OK, "setAttribute failed: %08lx\n", hres);
     SysFreeString(name);
@@ -3959,6 +3959,250 @@ static void test_attr_collection(IHTMLElement *elem)
 
     IDispatch_Release(disp);
     IHTMLAttributeCollection_Release(attr_col);
+}
+
+static void test_attr_collection_builtins(IHTMLDocument2 *doc)
+{
+    static const WCHAR *generic_builtins[] = {
+        L"accessKey", L"aria-activedescendant", L"aria-atomic", L"aria-autocomplete", L"aria-busy", L"aria-checked", L"aria-controls", L"aria-describedby",
+        L"aria-disabled", L"aria-dropeffect", L"aria-expanded", L"aria-flowto", L"aria-grabbed", L"aria-haspopup", L"aria-hidden", L"aria-invalid", L"aria-label",
+        L"aria-labelledby", L"aria-level", L"aria-live", L"aria-multiline", L"aria-multiselectable", L"aria-orientation", L"aria-owns", L"aria-posinset",
+        L"aria-pressed", L"aria-readonly", L"aria-relevant", L"aria-required", L"aria-secret", L"aria-selected", L"aria-setsize", L"aria-sort", L"aria-valuemax",
+        L"aria-valuemin", L"aria-valuenow", L"aria-valuetext", L"class", L"contentEditable", L"dataFld", L"dataFormatAs", L"dataSrc", L"dir", L"disabled",
+        L"hideFocus", L"id", L"implementation", L"lang", L"language", L"onactivate", L"onafterupdate", L"onbeforeactivate", L"onbeforecopy", L"onbeforecut",
+        L"onbeforedeactivate", L"onbeforeeditfocus", L"onbeforepaste", L"onbeforeupdate", L"onblur", L"oncellchange", L"onclick", L"oncontextmenu", L"oncontrolselect",
+        L"oncopy", L"oncuechange", L"oncut", L"ondataavailable", L"ondatasetchanged", L"ondatasetcomplete", L"ondblclick", L"ondeactivate", L"ondrag", L"ondragend",
+        L"ondragenter", L"ondragleave", L"ondragover", L"ondragstart", L"ondrop", L"onerrorupdate", L"onfilterchange", L"onfocus", L"onfocusin", L"onfocusout",
+        L"onhelp", L"oninvalid", L"onkeydown", L"onkeypress", L"onkeyup", L"onlayoutcomplete", L"onlosecapture", L"onmousedown", L"onmouseenter", L"onmouseleave",
+        L"onmousemove", L"onmouseout", L"onmouseover", L"onmouseup", L"onmousewheel", L"onmove", L"onmoveend", L"onmovestart", L"onmsanimationend",
+        L"onmsanimationiteration", L"onmsanimationstart", L"onmsmanipulationstatechanged", L"onmstransitionend", L"onmstransitionstart", L"onpage", L"onpaste",
+        L"onpropertychange", L"onreadystatechange", L"onresize", L"onresizeend", L"onresizestart", L"onrowenter", L"onrowexit", L"onrowsdelete", L"onrowsinserted",
+        L"onscroll", L"onselectstart", L"role", L"spellcheck", L"style", L"tabIndex", L"title", L"x-ms-acceleratorkey", L"x-ms-aria-flowfrom"
+    };
+    static const WCHAR *generic_builtins_todo[] = {
+        L"aria-activedescendant", L"aria-atomic", L"aria-autocomplete", L"aria-busy", L"aria-checked", L"aria-controls", L"aria-describedby", L"aria-disabled",
+        L"aria-dropeffect", L"aria-expanded", L"aria-flowto", L"aria-grabbed", L"aria-haspopup", L"aria-hidden", L"aria-invalid", L"aria-label", L"aria-labelledby",
+        L"aria-level", L"aria-live", L"aria-multiline", L"aria-multiselectable", L"aria-orientation", L"aria-owns", L"aria-posinset", L"aria-pressed", L"aria-readonly",
+        L"aria-relevant", L"aria-required", L"aria-secret", L"aria-selected", L"aria-setsize", L"aria-sort", L"aria-valuemax", L"aria-valuemin", L"aria-valuenow",
+        L"aria-valuetext", L"class", L"dataFld", L"dataFormatAs", L"dataSrc", L"implementation", L"oncuechange", L"oninvalid", L"onmouseenter", L"onmsanimationend",
+        L"onmsanimationiteration", L"onmsanimationstart", L"onmsmanipulationstatechanged", L"onmstransitionend", L"onmstransitionstart", L"role", L"spellcheck",
+        L"x-ms-acceleratorkey", L"x-ms-aria-flowfrom"
+    };
+    static const WCHAR *tags[] = {
+        L"audio",     NULL,
+        L"b",         L"cite", L"dateTime", NULL,
+        L"base",      L"href", L"target", NULL,
+        L"basefont",  L"color", L"face", L"size", NULL,
+        L"body",      L"aLink", L"background", L"bgColor", L"bgProperties", L"bottomMargin", L"leftMargin", L"link", L"noWrap", L"onafterprint", L"onbeforeprint", L"onbeforeunload",
+                      L"onhashchange", L"onload", L"onoffline", L"ononline", L"onselect", L"onunload", L"rightMargin", L"scroll", L"text", L"topMargin", L"vLink", NULL,
+        L"br",        L"clear", NULL,
+        L"button",    L"formaction", L"formenctype", L"formmethod", L"formnovalidate", L"formtarget", L"name", L"type", NULL,
+        L"caption",   L"align", L"vAlign", NULL,
+        L"center",    L"cite", L"clear", L"width", NULL,
+        L"code",      L"cite", L"dateTime", NULL,
+        L"col",       L"align", L"bgColor", L"ch", L"chOff", L"span", L"vAlign", L"width", NULL,
+        L"dd",        L"noWrap", NULL,
+        L"dir",       L"compact", L"type", NULL,
+        L"div",       L"align", L"nofocusrect", L"noWrap", NULL,
+        L"dl",        L"compact", NULL,
+        L"dt",        L"noWrap", NULL,
+        L"embed",     L"align", L"codeBase", L"height", L"hidden", L"name", L"palette", L"pluginspage", L"src", L"type", L"units", L"width", NULL,
+        L"fieldset",  L"align", NULL,
+        L"font",      L"color", L"face", L"size", NULL,
+        L"form",      L"accept-charset", L"action", L"encType", L"method", L"name", L"onreset", L"onsubmit", L"target", NULL,
+        L"frame",     L"allowTransparency", L"border", L"borderColor", L"frameBorder", L"frameSpacing", L"longDesc", L"marginHeight", L"marginWidth", L"name", L"noResize", L"onload", L"scrolling", L"src", NULL,
+        L"frameset",  L"border", L"borderColor", L"cols", L"frameBorder", L"frameSpacing", L"name", L"onafterprint", L"onbeforeprint", L"onbeforeunload", L"onload", L"onunload", L"rows", NULL,
+        L"h1",        L"align", L"cite", L"clear", L"width", NULL,
+        L"head",      L"profile", NULL,
+        L"hr",        L"align", L"color", L"noShade", L"SIZE", L"width", NULL,
+        L"html",      L"version", NULL,
+        L"i",         L"cite", L"dateTime", NULL,
+        L"iframe",    L"align", L"allowTransparency", L"border", L"frameBorder", L"frameSpacing", L"height", L"hspace", L"longDesc", L"marginHeight", L"marginWidth",
+                      L"name", L"noResize", L"onload", L"scrolling", L"src", L"vspace", L"width", NULL,
+        L"img",       L"align", L"alt", L"border", L"dynsrc", L"height", L"hspace", L"isMap", L"longDesc", L"loop", L"lowsrc", L"name",
+                      L"onabort", L"onerror", L"onload", L"src", L"start", L"useMap", L"vrml", L"vspace", L"width", NULL,
+        L"input",     L"accept", L"align", L"alt", L"border", L"cache", L"checked", L"dynsrc", L"formaction", L"formenctype", L"formmethod", L"formnovalidate", L"formtarget",
+                      L"height", L"hspace", L"indeterminate", L"loop", L"lowsrc", L"maxLength", L"name", L"onabort", L"onchange", L"onerror", L"onload", L"onselect", L"readOnly",
+                      L"size", L"src", L"start", L"type", L"useMap", L"value", L"vrml", L"vspace", L"width", NULL,
+        L"label",     L"for", NULL,
+        L"legend",    L"align", NULL,
+        L"li",        L"type", L"value", NULL,
+        L"link",      L"charset", L"href", L"hreflang", L"media", L"onerror", L"onload", L"rel", L"rev", L"target", L"type", NULL,
+        L"map",       L"name", NULL,
+        L"meta",      L"charset", L"content", L"http-equiv", L"name", L"scheme", L"url", NULL,
+        L"noscript",  NULL,
+        L"object",    L"align", L"alt", L"archive", L"border", L"classid", L"code", L"codeBase", L"codeType", L"data", L"declare", L"height",
+                      L"hspace", L"name", L"object", L"onerror", L"standby", L"type", L"useMap", L"vspace", L"width", NULL,
+        L"ol",        L"compact", L"start", L"type", NULL,
+        L"option",    L"label", L"selected", L"value", NULL,
+        L"p",         L"align", L"cite", L"clear", L"width", NULL,
+        L"param",     L"name", L"type", L"value", L"valueType", NULL,
+        L"pre",       L"cite", L"clear", L"width", NULL,
+        L"q",         L"cite", L"dateTime", NULL,
+        L"script",    L"charset", L"defer", L"event", L"for", L"onerror", L"src", L"type", NULL,
+        L"select",    L"align", L"multiple", L"name", L"onchange", L"size", NULL,
+        L"span",      L"cite", L"dateTime", L"nofocusrect", NULL,
+        L"style",     L"media", L"onerror", L"onload", L"type", NULL,
+        L"table",     L"align", L"background", L"bgColor", L"border", L"borderColor", L"borderColorDark", L"borderColorLight", L"cellPadding", L"cellSpacing",
+                      L"cols", L"dataPageSize", L"frame", L"height", L"rules", L"summary", L"width", NULL,
+        L"tbody",     L"align", L"bgColor", L"ch", L"chOff", L"vAlign", NULL,
+        L"td",        L"abbr", L"align", L"axis", L"background", L"bgColor", L"borderColor", L"borderColorDark", L"borderColorLight", L"ch", L"chOff",
+                      L"colSpan", L"headers", L"height", L"noWrap", L"rowSpan", L"scope", L"vAlign", L"width", NULL,
+        L"textarea",  L"cols", L"name", L"onchange", L"onselect", L"readOnly", L"rows", L"wrap", NULL,
+        L"tr",        L"align", L"bgColor", L"borderColor", L"borderColorDark", L"borderColorLight", L"ch", L"chOff", L"height", L"vAlign", NULL,
+        L"ul",        L"compact", L"type", NULL,
+        L"video",     NULL,
+        L"winetest",  NULL,
+        NULL
+    };
+    static const WCHAR *tags_todo[] = {
+        L"b",         L"cite", L"dateTime", NULL,
+        L"base",      L"href", L"target", NULL,
+        L"basefont",  L"color", L"face", L"size", NULL,
+        L"body",      L"onhashchange", L"onoffline", L"ononline", NULL,
+        L"br",        L"clear", NULL,
+        L"button",    L"formaction", L"formenctype", L"formmethod", L"formnovalidate", L"formtarget", NULL,
+        L"caption",   L"align", L"vAlign", NULL,
+        L"center",    L"cite", L"clear", L"width", NULL,
+        L"code",      L"cite", L"dateTime", NULL,
+        L"col",       L"align", L"bgColor", L"ch", L"chOff", L"span", L"vAlign", L"width", NULL,
+        L"dd",        L"noWrap", NULL,
+        L"dir",       L"compact", L"type", NULL,
+        L"div",       L"align", L"nofocusrect", L"noWrap", NULL,
+        L"dl",        L"compact", NULL,
+        L"dt",        L"noWrap", NULL,
+        L"embed",     L"align", L"codeBase", L"type", NULL,
+        L"fieldset",  L"align", NULL,
+        L"font",      L"color", L"face", L"size", NULL,
+        L"form",      L"accept-charset", L"encType", NULL,
+        L"frame",     L"borderColor", L"longDesc", NULL,
+        L"frameset",  L"border", L"borderColor", L"cols", L"frameBorder", L"frameSpacing", L"name", L"onafterprint", L"onbeforeprint", L"onbeforeunload", L"onload", L"onunload", L"rows", NULL,
+        L"h1",        L"align", L"cite", L"clear", L"width", NULL,
+        L"hr",        L"align", L"color", L"noShade", L"SIZE", L"width", NULL,
+        L"i",         L"cite", L"dateTime", NULL,
+        L"iframe",    L"longDesc", NULL,
+        L"img",       L"longDesc", NULL,
+        L"input",     L"accept", L"cache", L"dynsrc", L"formaction", L"formenctype", L"formmethod", L"formnovalidate", L"formtarget", L"useMap", NULL,
+        L"label",     L"for", NULL,
+        L"legend",    L"align", NULL,
+        L"li",        L"type", L"value", NULL,
+        L"link",      L"charset", L"hreflang", L"target", NULL,
+        L"map",       L"name", NULL,
+        L"meta",      L"http-equiv", L"scheme", NULL,
+        L"object",    L"alt", L"archive", L"border", L"classid", L"data", L"declare", L"object", L"standby", L"useMap", NULL,
+        L"ol",        L"compact", L"start", L"type", NULL,
+        L"option",    L"label", NULL,
+        L"p",         L"align", L"cite", L"clear", L"width", NULL,
+        L"param",     L"name", L"type", L"value", L"valueType", NULL,
+        L"pre",       L"cite", L"clear", L"width", NULL,
+        L"q",         L"cite", L"dateTime", NULL,
+        L"script",    L"charset", L"for", NULL,
+        L"select",    L"align", NULL,
+        L"span",      L"cite", L"dateTime", L"nofocusrect", NULL,
+        L"tbody",     L"align", L"bgColor", L"ch", L"chOff", L"vAlign", NULL,
+        L"td",        L"abbr", L"axis", L"ch", L"chOff", L"headers", L"scope", NULL,
+        L"tr",        L"ch", L"chOff", L"height", NULL,
+        L"ul",        L"compact", L"type", NULL,
+        NULL
+    };
+    BOOLEAN found[ARRAY_SIZE(generic_builtins)];
+    BOOLEAN found_tag_specific[36];
+
+    const WCHAR **iter = tags, **iter_todo = tags_todo;
+    IHTMLAttributeCollection *attr_col;
+    IHTMLDOMAttribute *attr;
+    IHTMLElement *elem;
+    IHTMLDOMNode *node;
+    IDispatch *disp;
+    LONG i, j, len;
+    HRESULT hres;
+    VARIANT id;
+    BSTR bstr;
+
+    while(*iter) {
+        const WCHAR *tag = *iter++, **todos = NULL;
+
+        if(*iter_todo && !wcscmp(tag, *iter_todo)) {
+            todos = ++iter_todo;
+            while(*iter_todo++) {}
+        }
+
+        bstr = SysAllocString(tag);
+        hres = IHTMLDocument2_createElement(doc, bstr, &elem);
+        ok(hres == S_OK, "[%s] createElement failed: %08lx\n", wine_dbgstr_w(tag), hres);
+        SysFreeString(bstr);
+
+        hres = IHTMLElement_QueryInterface(elem, &IID_IHTMLDOMNode, (void**)&node);
+        ok(hres == S_OK, "[%s] Could not get IHTMLDOMNode iface: %08lx\n", wine_dbgstr_w(tag), hres);
+        IHTMLElement_Release(elem);
+
+        hres = IHTMLDOMNode_get_attributes(node, &disp);
+        ok(hres == S_OK, "[%s] get_attributes failed: %08lx\n", wine_dbgstr_w(tag), hres);
+        IHTMLDOMNode_Release(node);
+
+        hres = IDispatch_QueryInterface(disp, &IID_IHTMLAttributeCollection, (void**)&attr_col);
+        ok(hres == S_OK, "[%s] Could not get IHTMLAttributeCollection iface: %08lx\n", wine_dbgstr_w(tag), hres);
+        IDispatch_Release(disp);
+
+        hres = IHTMLAttributeCollection_get_length(attr_col, &len);
+        ok(hres == S_OK, "[%s] get_length failed: %08lx\n", wine_dbgstr_w(tag), hres);
+
+        memset(found, 0, sizeof(found));
+        memset(found_tag_specific, 0, sizeof(found_tag_specific));
+        for(i = 0; i < len; i++) {
+            BOOL expected = FALSE;
+
+            V_VT(&id) = VT_I4;
+            V_I4(&id) = i;
+            hres = IHTMLAttributeCollection_item(attr_col, &id, &disp);
+            ok(hres == S_OK, "[%s:%ld] item failed: %08lx\n", wine_dbgstr_w(tag), i, hres);
+
+            hres = IDispatch_QueryInterface(disp, &IID_IHTMLDOMAttribute, (void**)&attr);
+            ok(hres == S_OK, "[%s:%ld] Could not get IHTMLDOMAttribute iface: %08lx\n", wine_dbgstr_w(tag), i, hres);
+            IDispatch_Release(disp);
+
+            hres = IHTMLDOMAttribute_get_nodeName(attr, &bstr);
+            ok(hres == S_OK, "[%s:%ld] get_nodeName failed: %08lx\n", wine_dbgstr_w(tag), i, hres);
+            IHTMLDOMAttribute_Release(attr);
+
+            for(j = 0; j < ARRAY_SIZE(generic_builtins); j++) {
+                if(!wcscmp(bstr, generic_builtins[j])) {
+                    found[j] = TRUE;
+                    expected = TRUE;
+                    break;
+                }
+            }
+            if(!expected) {
+                for(j = 0; iter[j]; j++) {
+                    if(!wcsicmp(bstr, iter[j])) {
+                        found_tag_specific[j] = TRUE;
+                        expected = TRUE;
+                        break;
+                    }
+                }
+            }
+            ok(expected, "[%s] %s is in collection but not in expected list\n", wine_dbgstr_w(tag), wine_dbgstr_w(bstr));
+            SysFreeString(bstr);
+        }
+        IHTMLAttributeCollection_Release(attr_col);
+
+        for(i = 0; i < ARRAY_SIZE(generic_builtins); i++) {
+            for(j = 0; !found[i] && j < ARRAY_SIZE(generic_builtins_todo); j++)
+                if(!wcscmp(generic_builtins[i], generic_builtins_todo[j]))
+                    break;
+            todo_wine_if(!found[i] && j < ARRAY_SIZE(generic_builtins_todo))
+            ok(found[i], "[%s] %s not in collection\n", wine_dbgstr_w(tag), wine_dbgstr_w(generic_builtins[i]));
+        }
+
+        for(i = 0; iter[i]; i++) {
+            for(j = 0; !found_tag_specific[i] && todos && todos[j]; j++)
+                if(!wcscmp(iter[i], todos[j]))
+                    break;
+            todo_wine_if(!found_tag_specific[i] && todos && todos[j])
+            ok(found_tag_specific[i], "[%s] %s not in collection\n", wine_dbgstr_w(tag), wine_dbgstr_w(iter[i]));
+        }
+        iter += i + 1;
+    }
 }
 
 #define test_elem_id(e,i) _test_elem_id(__LINE__,e,i)
@@ -5185,6 +5429,24 @@ static void _link_put_href(unsigned line, IHTMLElement *elem, const WCHAR *v)
     _test_link_href(line, elem, v);
 }
 
+#define elem_has_attr(a,b) _elem_has_attr(__LINE__,a,b)
+static BOOL _elem_has_attr(unsigned line, IUnknown *unk, const WCHAR *attr_name)
+{
+    BSTR str = SysAllocString(attr_name);
+    IHTMLElement6 *elem;
+    VARIANT_BOOL b;
+    HRESULT hres;
+
+    hres = IUnknown_QueryInterface(unk, &IID_IHTMLElement6, (void**)&elem);
+    ok_(__FILE__,line)(hres == S_OK, "Could not get IHTMLElement6: %08lx\n", hres);
+    hres = IHTMLElement6_hasAttribute(elem, str, &b);
+    ok_(__FILE__,line)(hres == S_OK, "hasAttribute failed: %08lx\n", hres);
+    IHTMLElement6_Release(elem);
+    SysFreeString(str);
+
+    return b != VARIANT_FALSE;
+}
+
 #define get_elem_doc(e) _get_elem_doc(__LINE__,e)
 static IHTMLDocument2 *_get_elem_doc(unsigned line, IUnknown *unk)
 {
@@ -5338,9 +5600,14 @@ static IHTMLDOMNode *_test_node_append_child(unsigned line, IUnknown *node_unk, 
 {
     IHTMLDOMNode *node = _get_node_iface(line, node_unk);
     IHTMLDOMNode *child = _get_node_iface(line, child_unk);
-    IHTMLDOMNode *new_child = NULL;
+    IHTMLDOMNode *new_child = (void*)0xdeadbeef;
     HRESULT hres;
 
+    hres = IHTMLDOMNode_appendChild(node, NULL, &new_child);
+    ok_(__FILE__,line) (hres == E_INVALIDARG, "appendChild returned: %08lx\n", hres);
+    ok_(__FILE__,line) (new_child == NULL, "new_child != NULL\n");
+
+    new_child = NULL;
     hres = IHTMLDOMNode_appendChild(node, child, &new_child);
     ok_(__FILE__,line) (hres == S_OK, "appendChild failed: %08lx\n", hres);
     ok_(__FILE__,line) (new_child != NULL, "new_child == NULL\n");
@@ -5363,9 +5630,14 @@ static void _test_node_append_child_discard(unsigned line, IUnknown *node_unk, I
 static IHTMLDOMNode *_test_node_insertbefore(unsigned line, IUnknown *node_unk, IHTMLDOMNode *child, VARIANT *var)
 {
     IHTMLDOMNode *node = _get_node_iface(line, node_unk);
-    IHTMLDOMNode *new_child = NULL;
+    IHTMLDOMNode *new_child = (void*)0xdeadbeef;
     HRESULT hres;
 
+    hres = IHTMLDOMNode_insertBefore(node, NULL, *var, &new_child);
+    ok_(__FILE__,line) (hres == E_INVALIDARG, "insertBefore returned: %08lx\n", hres);
+    ok_(__FILE__,line) (new_child == NULL, "new_child != NULL\n");
+
+    new_child = NULL;
     hres = IHTMLDOMNode_insertBefore(node, child, *var, &new_child);
     ok_(__FILE__,line) (hres == S_OK, "insertBefore failed: %08lx\n", hres);
     ok_(__FILE__,line) (new_child != NULL, "new_child == NULL\n");
@@ -5380,9 +5652,14 @@ static IHTMLDOMNode *_test_node_insertbefore(unsigned line, IUnknown *node_unk, 
 static void _test_node_remove_child(unsigned line, IUnknown *unk, IHTMLDOMNode *child)
 {
     IHTMLDOMNode *node = _get_node_iface(line, unk);
-    IHTMLDOMNode *new_node = NULL;
+    IHTMLDOMNode *new_node = (void*)0xdeadbeef;
     HRESULT hres;
 
+    hres = IHTMLDOMNode_removeChild(node, NULL, &new_node);
+    ok_(__FILE__,line) (hres == E_INVALIDARG, "removeChild returned: %08lx\n", hres);
+    ok_(__FILE__,line) (new_node == NULL, "new_node != NULL\n");
+
+    new_node = NULL;
     hres = IHTMLDOMNode_removeChild(node, child, &new_node);
     ok_(__FILE__,line) (hres == S_OK, "removeChild failed: %08lx\n", hres);
     ok_(__FILE__,line) (new_node != NULL, "new_node == NULL\n");
@@ -10291,10 +10568,33 @@ static void test_attr_node(IHTMLDOMAttribute *test_attr, IHTMLDocument2 *doc)
 
 static void test_attr(IHTMLDocument2 *doc, IHTMLElement *elem)
 {
+    static const WCHAR *elem_attr_props[] = {
+        L"accessKey", L"contentEditable", L"dir", L"disabled", L"hideFocus", L"id", L"lang", L"language", L"onactivate", L"onafterupdate", L"onbeforeactivate",
+        L"onbeforecopy", L"onbeforecut", L"onbeforedeactivate", L"onbeforeeditfocus", L"onbeforepaste", L"onbeforeupdate", L"onblur", L"oncellchange", L"onclick",
+        L"oncontextmenu", L"oncontrolselect", L"oncopy", L"oncut", L"ondataavailable", L"ondatasetchanged", L"ondatasetcomplete", L"ondblclick", L"ondeactivate",
+        L"ondrag", L"ondragend", L"ondragenter", L"ondragleave", L"ondragover", L"ondragstart", L"ondrop", L"onerrorupdate", L"onfilterchange", L"onfocus",
+        L"onfocusin", L"onfocusout", L"onhelp", L"onkeydown", L"onkeypress", L"onkeyup", L"onlayoutcomplete", L"onlosecapture", L"onmousedown", L"onmouseleave",
+        L"onmousemove", L"onmouseout", L"onmouseover", L"onmouseup", L"onmousewheel", L"onmove", L"onmoveend", L"onmovestart", L"onpage", L"onpaste",
+        L"onpropertychange", L"onreadystatechange", L"onresize", L"onresizeend", L"onresizestart", L"onrowenter", L"onrowexit", L"onrowsdelete",
+        L"onrowsinserted", L"onscroll", L"onselectstart", L"style", L"tabIndex", L"title"
+    };
+    static const WCHAR *elem_noattr_props[] = {
+        L"addBehavior", L"all", L"applyElement", L"attachEvent", L"attributes", L"behaviorUrns", L"blur", L"canHaveHTML", L"childNodes", L"children", L"className",
+        L"clearAttributes", L"click", L"clientHeight", L"clientLeft", L"clientTop", L"clientWidth", L"componentFromPoint", L"contains", L"createControlRange",
+        L"currentStyle", L"detachEvent", L"document", L"doScroll", L"dragDrop", L"filters", L"fireEvent", L"firstChild", L"focus", L"getAdjacentText", L"getAttribute",
+        L"getAttributeNode", L"getBoundingClientRect", L"getClientRects", L"getElementsByTagName", L"getExpression", L"innerHTML", L"innerText", L"insertAdjacentElement",
+        L"insertAdjacentHTML", L"insertAdjacentText", L"isContentEditable", L"isDisabled", L"isMultiLine", L"isTextEdit", L"lastChild", L"mergeAttributes", L"nextSibling",
+        L"nodeName", L"nodeName", L"nodeType", L"nodeValue", L"normalize", L"offsetHeight", L"offsetLeft", L"offsetParent", L"offsetTop", L"offsetWidth", L"outerHTML",
+        L"outerText", L"ownerDocument", L"parentElement", L"parentNode", L"parentTextEdit", L"previousSibling", L"readyState", L"recordNumber", L"removeAttribute",
+        L"removeAttributeNode", L"removeBehavior", L"removeExpression", L"replaceAdjacentText", L"runtimeStyle", L"scopeName", L"scrollHeight", L"scrollIntoView",
+        L"scrollLeft", L"scrollTop", L"scrollWidth", L"setActive", L"setAttribute", L"setAttributeNode", L"setExpression", L"sourceIndex", L"tagName", L"tagUrn",
+        L"toString", L"uniqueID", L"uniqueNumber"
+    };
     IHTMLDOMAttribute *attr, *attr2, *attr3;
     IHTMLElement4 *elem4;
     VARIANT_BOOL vbool;
     HRESULT hres;
+    unsigned i;
     VARIANT v;
     BSTR bstr;
 
@@ -10383,9 +10683,23 @@ static void test_attr(IHTMLDocument2 *doc, IHTMLElement *elem)
     test_attr_expando(attr, VARIANT_FALSE);
     test_attr_node(attr, doc);
 
+    for(i = 0; i < ARRAY_SIZE(elem_attr_props); i++) {
+        BOOL has_attr = elem_has_attr((IUnknown*)elem, elem_attr_props[i]);
+
+        attr = get_elem_attr_node((IUnknown*)elem, elem_attr_props[i], TRUE);
+        test_attr_specified(attr, has_attr ? VARIANT_TRUE : VARIANT_FALSE);
+        test_attr_expando(attr, VARIANT_FALSE);
+        IHTMLDOMAttribute_Release(attr);
+    }
+    for(i = 0; i < ARRAY_SIZE(elem_noattr_props); i++) {
+        get_elem_attr_node((IUnknown*)elem, elem_noattr_props[i], FALSE);
+    }
+
+    ok(elem_has_attr((IUnknown*)elem, L"emptyattr"), "elem does not have emptyattr");
     attr = get_elem_attr_node((IUnknown*)elem, L"emptyattr", TRUE);
     test_attr_specified(attr, VARIANT_TRUE);
     test_attr_expando(attr, VARIANT_TRUE);
+    test_attr_node(attr, doc);
 
     bstr = SysAllocString(L"emptyattr");
     hres = IHTMLElement_removeAttribute(elem, bstr, 0, &vbool);
@@ -10937,6 +11251,16 @@ static void test_replacechild_elems(IHTMLDocument2 *doc)
     node3 = test_create_text(doc, L"replaced");
 
     nodeBody = _get_node_iface(__LINE__, (IUnknown *)body);
+
+    nodeNew = (void*)0xdeadbeef;
+    hres = IHTMLDOMNode_replaceChild(nodeBody, node3, NULL, &nodeNew);
+    ok(hres == E_INVALIDARG, "Expected E_INVALIDARG, got 0x%08lx\n", hres);
+    ok(nodeNew == NULL, "nodeNew != NULL\n");
+
+    nodeNew = (void*)0xdeadbeef;
+    hres = IHTMLDOMNode_replaceChild(nodeBody, NULL, node2, &nodeNew);
+    ok(hres == E_INVALIDARG, "Expected E_INVALIDARG, got 0x%08lx\n", hres);
+    ok(nodeNew == NULL, "nodeNew != NULL\n");
 
     hres = IHTMLDOMNode_replaceChild(nodeBody, node3, node2, &nodeNew);
     ok(hres == S_OK, "Expected S_OK, got 0x%08lx\n", hres);
@@ -12768,6 +13092,7 @@ START_TEST(dom)
         run_domtest(elem_test2_str, test_elems2);
         run_domtest(doc_blank, test_dom_elements);
         run_domtest(doc_blank, test_about_blank_storage);
+        run_domtest(doc_blank, test_attr_collection_builtins);
         if(is_ie9plus) {
             compat_mode = COMPAT_IE9;
             run_domtest(doc_blank_ie9, test_doc_open);
