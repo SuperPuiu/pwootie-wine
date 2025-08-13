@@ -183,6 +183,7 @@ struct constructor;
     XIID(IHTMLAttributeCollection) \
     XIID(IHTMLAttributeCollection2) \
     XIID(IHTMLAttributeCollection3) \
+    XIID(IHTMLAttributeCollection4) \
     XIID(IHTMLBodyElement) \
     XIID(IHTMLBodyElement2) \
     XIID(IHTMLButtonElement) \
@@ -1329,16 +1330,21 @@ struct HTMLAttributeCollection {
     IHTMLAttributeCollection IHTMLAttributeCollection_iface;
     IHTMLAttributeCollection2 IHTMLAttributeCollection2_iface;
     IHTMLAttributeCollection3 IHTMLAttributeCollection3_iface;
+    IHTMLAttributeCollection4 IHTMLAttributeCollection4_iface;
 
+    nsIDOMMozNamedAttrMap *dom_attrs;
     HTMLElement *elem;
     struct list attrs;
 };
 
 typedef struct {
-    DispatchEx dispex;
+    HTMLDOMNode node; /* only dispex is valid if dom_attr is NULL */
     IHTMLDOMAttribute IHTMLDOMAttribute_iface;
     IHTMLDOMAttribute2 IHTMLDOMAttribute2_iface;
     IHTMLDOMAttribute3 IHTMLDOMAttribute3_iface;
+
+    /* Gecko attr for proper nodes, when non-NULL other fields are invalid */
+    nsIDOMAttr *dom_attr;
 
     /* value is valid only for detached attributes (when elem == NULL). */
     VARIANT value;
@@ -1354,6 +1360,8 @@ typedef struct {
 HTMLDOMAttribute *unsafe_impl_from_IHTMLDOMAttribute(IHTMLDOMAttribute*);
 
 HRESULT HTMLDOMAttribute_Create(const WCHAR*,HTMLElement*,DISPID,HTMLDocumentNode*,HTMLDOMAttribute**);
+HRESULT create_attr_node(HTMLDocumentNode *doc, nsIDOMAttr *dom_attr, HTMLDOMAttribute **ret);
+HRESULT get_attr_node(nsIDOMAttr *dom_attr, HTMLDOMAttribute **ret);
 
 HRESULT HTMLElement_Create(HTMLDocumentNode*,nsIDOMNode*,BOOL,HTMLElement**);
 HRESULT HTMLCommentElement_Create(HTMLDocumentNode*,nsIDOMNode*,HTMLElement**);
