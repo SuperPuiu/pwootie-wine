@@ -1446,100 +1446,6 @@ NTSTATUS return_wow64_string( const void *str, PTR32 *wow64_str )
     return STATUS_BUFFER_TOO_SMALL;
 }
 
-NTSTATUS wow64_ext_wglCreatePbufferARB( void *args )
-{
-    struct
-    {
-        PTR32 teb;
-        PTR32 hDC;
-        GLint iPixelFormat;
-        GLint iWidth;
-        GLint iHeight;
-        PTR32 piAttribList;
-        PTR32 ret;
-    } *params32 = args;
-    struct wglCreatePbufferARB_params params =
-    {
-        .teb = get_teb64(params32->teb),
-        .hDC = ULongToPtr(params32->hDC),
-        .iPixelFormat = params32->iPixelFormat,
-        .iWidth = params32->iWidth,
-        .iHeight = params32->iHeight,
-        .piAttribList = ULongToPtr(params32->piAttribList),
-    };
-    NTSTATUS status;
-    if ((status = ext_wglCreatePbufferARB( &params ))) return status;
-    params32->ret = (UINT_PTR)params.ret;
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS wow64_ext_wglGetPbufferDCARB( void *args )
-{
-    struct
-    {
-        PTR32 teb;
-        PTR32 hPbuffer;
-        PTR32 ret;
-    } *params32 = args;
-    struct wglGetPbufferDCARB_params params =
-    {
-        .teb = get_teb64(params32->teb),
-        .hPbuffer = (HPBUFFERARB)ULongToPtr(params32->hPbuffer),
-    };
-    NTSTATUS status;
-    if ((status = ext_wglGetPbufferDCARB( &params ))) return status;
-    params32->ret = (UINT_PTR)params.ret;
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS wow64_wgl_wglGetProcAddress( void *args )
-{
-    struct
-    {
-        PTR32 teb;
-        PTR32 lpszProc;
-        PTR32 ret;
-    } *params32 = args;
-    struct wglGetProcAddress_params params =
-    {
-        .teb = get_teb64(params32->teb),
-        .lpszProc = ULongToPtr(params32->lpszProc),
-    };
-    NTSTATUS status;
-    if ((status = wgl_wglGetProcAddress( &params ))) return status;
-    params32->ret = (UINT_PTR)params.ret;
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS wow64_ext_glPathGlyphIndexRangeNV( void *args )
-{
-    struct
-    {
-        PTR32 teb;
-        GLenum fontTarget;
-        PTR32 fontName;
-        GLbitfield fontStyle;
-        GLuint pathParameterTemplate;
-        GLfloat emScale;
-        GLuint baseAndCount[2];
-        GLenum ret;
-    } *params32 = args;
-    struct glPathGlyphIndexRangeNV_params params =
-    {
-        .teb = get_teb64(params32->teb),
-        .fontTarget = params32->fontTarget,
-        .fontName = ULongToPtr(params32->fontName),
-        .fontStyle = params32->fontStyle,
-        .pathParameterTemplate = params32->pathParameterTemplate,
-        .emScale = params32->emScale,
-        .baseAndCount = {params32->baseAndCount[0], params32->baseAndCount[1]},
-    };
-    NTSTATUS status;
-    if ((status = ext_glPathGlyphIndexRangeNV( &params ))) return status;
-    params32->ret = params.ret;
-    return status;
-}
-
 GLenum wow64_glClientWaitSync( TEB *teb, GLsync sync, GLbitfield flags, GLuint64 timeout )
 {
     const struct opengl_funcs *funcs = teb->glTable;
@@ -1724,78 +1630,43 @@ static PTR32 wow64_unmap_buffer( void *ptr, SIZE_T size, GLbitfield access )
     return PtrToUlong( wow_ptr );
 }
 
-static NTSTATUS wow64_gl_get_buffer_pointer_v( void *args, NTSTATUS (*get_buffer_pointer_v64)(void *) )
+static void wow64_gl_get_buffer_pointer_v( GLenum pname, PTR32 *ptr, PTR32 *wow_ptr )
 {
-    PTR32 *ptr; /* pointer to the buffer data, where we saved the wow64 pointer */
-    struct
-    {
-        PTR32 teb;
-        GLenum target;
-        GLenum pname;
-        PTR32 params;
-    } *params32 = args;
-    struct glGetBufferPointerv_params params =
-    {
-        .teb = get_teb64(params32->teb),
-        .target = params32->target,
-        .pname = params32->pname,
-        .params = (void **)&ptr,
-    };
-    PTR32 *wow_ptr = UlongToPtr(params32->params);
-    NTSTATUS status;
-
-    if ((status = get_buffer_pointer_v64( &params ))) return status;
-    if (params.pname != GL_BUFFER_MAP_POINTER) return STATUS_NOT_IMPLEMENTED;
-    if (ULongToPtr(*wow_ptr = PtrToUlong(ptr)) == ptr) return STATUS_SUCCESS;  /* we're lucky */
+    if (pname != GL_BUFFER_MAP_POINTER) return;
+    if (ULongToPtr(*wow_ptr = PtrToUlong(ptr)) == ptr) return;  /* we're lucky */
     *wow_ptr = ptr[0];
-    return STATUS_SUCCESS;
 }
 
-NTSTATUS wow64_ext_glGetBufferPointerv( void *args )
+void wow64_glGetBufferPointerv( TEB *teb, GLenum target, GLenum pname, PTR32 *params )
 {
-    return wow64_gl_get_buffer_pointer_v( args, ext_glGetBufferPointerv );
+    const struct opengl_funcs *funcs = teb->glTable;
+    void *ptr;
+    funcs->p_glGetBufferPointerv( target, pname, &ptr );
+    return wow64_gl_get_buffer_pointer_v( pname, ptr, params );
 }
 
-NTSTATUS wow64_ext_glGetBufferPointervARB( void *args )
+void wow64_glGetBufferPointervARB( TEB *teb, GLenum target, GLenum pname, PTR32 *params )
 {
-    return wow64_gl_get_buffer_pointer_v( args, ext_glGetBufferPointervARB );
+    const struct opengl_funcs *funcs = teb->glTable;
+    void *ptr;
+    funcs->p_glGetBufferPointervARB( target, pname, &ptr );
+    return wow64_gl_get_buffer_pointer_v( pname, ptr, params );
 }
 
-static NTSTATUS wow64_gl_get_named_buffer_pointer_v( void *args, NTSTATUS (*gl_get_named_buffer_pointer_v64)(void *) )
+void wow64_glGetNamedBufferPointerv( TEB *teb, GLuint buffer, GLenum pname, PTR32 *params )
 {
-    PTR32 *ptr; /* pointer to the buffer data, where we saved the wow64 pointer */
-    struct
-    {
-        PTR32 teb;
-        GLuint buffer;
-        GLenum pname;
-        PTR32 params;
-    } *params32 = args;
-    struct glGetNamedBufferPointerv_params params =
-    {
-        .teb = get_teb64(params32->teb),
-        .buffer = params32->buffer,
-        .pname = params32->pname,
-        .params = (void **)&ptr,
-    };
-    PTR32 *wow_ptr = UlongToPtr(params32->params);
-    NTSTATUS status;
-
-    if ((status = gl_get_named_buffer_pointer_v64( &params ))) return status;
-    if (params.pname != GL_BUFFER_MAP_POINTER) return STATUS_NOT_IMPLEMENTED;
-    if (ULongToPtr(*wow_ptr = PtrToUlong(ptr)) == ptr) return STATUS_SUCCESS;  /* we're lucky */
-    *wow_ptr = ptr[0];
-    return STATUS_SUCCESS;
+    const struct opengl_funcs *funcs = teb->glTable;
+    void *ptr;
+    funcs->p_glGetNamedBufferPointerv( buffer, pname, &ptr );
+    return wow64_gl_get_buffer_pointer_v( pname, ptr, params );
 }
 
-NTSTATUS wow64_ext_glGetNamedBufferPointerv( void *args )
+void wow64_glGetNamedBufferPointervEXT( TEB *teb, GLuint buffer, GLenum pname, PTR32 *params )
 {
-    return wow64_gl_get_named_buffer_pointer_v( args, ext_glGetNamedBufferPointerv );
-}
-
-NTSTATUS wow64_ext_glGetNamedBufferPointervEXT( void *args )
-{
-    return wow64_gl_get_named_buffer_pointer_v( args, ext_glGetNamedBufferPointervEXT );
+    const struct opengl_funcs *funcs = teb->glTable;
+    void *ptr;
+    funcs->p_glGetNamedBufferPointervEXT( buffer, pname, &ptr );
+    return wow64_gl_get_buffer_pointer_v( pname, ptr, params );
 }
 
 static PTR32 wow64_gl_map_buffer( TEB *teb, GLenum target, GLenum access, PTR32 *client_ptr,

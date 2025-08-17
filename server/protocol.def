@@ -1242,9 +1242,10 @@ struct obj_locator
     data_size_t  desc_len;      /* description length in bytes */
     VARARG(desc,unicode_str);   /* description string */
 @END
-#define GET_THREAD_INFO_FLAG_DBG_HIDDEN 0x01
-#define GET_THREAD_INFO_FLAG_TERMINATED 0x02
-#define GET_THREAD_INFO_FLAG_LAST       0x04
+#define GET_THREAD_INFO_FLAG_DBG_HIDDEN    0x01
+#define GET_THREAD_INFO_FLAG_TERMINATED    0x02
+#define GET_THREAD_INFO_FLAG_LAST          0x04
+#define GET_THREAD_INFO_FLAG_DISABLE_BOOST 0x08
 
 
 /* Retrieve information about thread times */
@@ -1266,6 +1267,7 @@ struct obj_locator
     affinity_t   affinity;     /* affinity mask */
     client_ptr_t entry_point;  /* thread entry point */
     obj_handle_t token;        /* impersonation token */
+    int          disable_boost;/* disable thread priority boost */
     unsigned int mask;         /* setting mask (see below) */
     VARARG(desc,unicode_str);  /* description string */
 @END
@@ -1276,6 +1278,7 @@ struct obj_locator
 #define SET_THREAD_INFO_ENTRYPOINT      0x10
 #define SET_THREAD_INFO_DESCRIPTION     0x20
 #define SET_THREAD_INFO_DBG_HIDDEN      0x40
+#define SET_THREAD_INFO_DISABLE_BOOST   0x80
 
 
 /* Suspend a thread */

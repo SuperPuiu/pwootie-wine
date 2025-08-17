@@ -1315,7 +1315,8 @@ NTSTATUS WINAPI NtCreateThreadEx( HANDLE *handle, ACCESS_MASK access, OBJECT_ATT
                                   ULONG flags, ULONG_PTR zero_bits, SIZE_T stack_commit,
                                   SIZE_T stack_reserve, PS_ATTRIBUTE_LIST *attr_list )
 {
-    static const ULONG supported_flags = THREAD_CREATE_FLAGS_CREATE_SUSPENDED | THREAD_CREATE_FLAGS_HIDE_FROM_DEBUGGER;
+    static const ULONG supported_flags = THREAD_CREATE_FLAGS_CREATE_SUSPENDED | THREAD_CREATE_FLAGS_HIDE_FROM_DEBUGGER |
+                                         THREAD_CREATE_FLAGS_BYPASS_PROCESS_FREEZE;
     sigset_t sigset;
     pthread_t pthread_id;
     pthread_attr_t pthread_attr;
@@ -2307,12 +2308,20 @@ NTSTATUS WINAPI NtQueryInformationThread( HANDLE handle, THREADINFOCLASS class,
 
     case ThreadPriorityBoost:
     {
-        DWORD *value = data;
-
         if (length != sizeof(ULONG)) return STATUS_INFO_LENGTH_MISMATCH;
-        if (ret_len) *ret_len = sizeof(ULONG);
-        *value = 0;
-        return STATUS_SUCCESS;
+        SERVER_START_REQ( get_thread_info )
+        {
+            req->handle = wine_server_obj_handle( handle );
+            status = wine_server_call( req );
+            if (status == STATUS_SUCCESS)
+            {
+                ULONG disable_boost = !!(reply->flags & GET_THREAD_INFO_FLAG_DISABLE_BOOST);
+                if (data) memcpy( data, &disable_boost, sizeof(disable_boost) );
+                if (ret_len) *ret_len = sizeof(disable_boost);
+            }
+        }
+        SERVER_END_REQ;
+        return status;
     }
 
     case ThreadIdealProcessorEx:
@@ -2553,8 +2562,19 @@ NTSTATUS WINAPI NtSetInformationThread( HANDLE handle, THREADINFOCLASS class,
     }
 
     case ThreadPriorityBoost:
-        WARN("Unimplemented class ThreadPriorityBoost.\n");
-        return STATUS_SUCCESS;
+    {
+        const DWORD *disable_boost = data;
+        if (length != sizeof(DWORD)) return STATUS_INVALID_PARAMETER;
+        SERVER_START_REQ( set_thread_info )
+        {
+            req->handle         = wine_server_obj_handle( handle );
+            req->disable_boost  = *disable_boost;
+            req->mask           = SET_THREAD_INFO_DISABLE_BOOST;
+            status = wine_server_call( req );
+        }
+        SERVER_END_REQ;
+        return status;
+    }
 
     case ThreadManageWritesToExecutableMemory:
     {

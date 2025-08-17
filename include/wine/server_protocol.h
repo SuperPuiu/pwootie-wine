@@ -1317,9 +1317,10 @@ struct get_thread_info_reply
     data_size_t  desc_len;
     /* VARARG(desc,unicode_str); */
 };
-#define GET_THREAD_INFO_FLAG_DBG_HIDDEN 0x01
-#define GET_THREAD_INFO_FLAG_TERMINATED 0x02
-#define GET_THREAD_INFO_FLAG_LAST       0x04
+#define GET_THREAD_INFO_FLAG_DBG_HIDDEN    0x01
+#define GET_THREAD_INFO_FLAG_TERMINATED    0x02
+#define GET_THREAD_INFO_FLAG_LAST          0x04
+#define GET_THREAD_INFO_FLAG_DISABLE_BOOST 0x08
 
 
 
@@ -1348,8 +1349,10 @@ struct set_thread_info_request
     affinity_t   affinity;
     client_ptr_t entry_point;
     obj_handle_t token;
+    int          disable_boost;
     unsigned int mask;
     /* VARARG(desc,unicode_str); */
+    char __pad_52[4];
 };
 struct set_thread_info_reply
 {
@@ -1362,6 +1365,7 @@ struct set_thread_info_reply
 #define SET_THREAD_INFO_ENTRYPOINT      0x10
 #define SET_THREAD_INFO_DESCRIPTION     0x20
 #define SET_THREAD_INFO_DBG_HIDDEN      0x40
+#define SET_THREAD_INFO_DISABLE_BOOST   0x80
 
 
 
@@ -6846,6 +6850,6 @@ union generic_reply
     struct set_keyboard_repeat_reply set_keyboard_repeat_reply;
 };
 
-#define SERVER_PROTOCOL_VERSION 880
+#define SERVER_PROTOCOL_VERSION 882
 
 #endif /* __WINE_WINE_SERVER_PROTOCOL_H */

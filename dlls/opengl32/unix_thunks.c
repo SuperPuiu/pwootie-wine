@@ -61,7 +61,7 @@ static NTSTATUS wgl_wglGetPixelFormat( void *args )
     return STATUS_SUCCESS;
 }
 
-NTSTATUS wgl_wglGetProcAddress( void *args )
+static NTSTATUS wgl_wglGetProcAddress( void *args )
 {
     struct wglGetProcAddress_params *params = args;
     params->ret = wrap_wglGetProcAddress( params->teb, params->lpszProc );
@@ -8736,7 +8736,7 @@ static NTSTATUS ext_glGetBufferParameterui64vNV( void *args )
     return STATUS_SUCCESS;
 }
 
-NTSTATUS ext_glGetBufferPointerv( void *args )
+static NTSTATUS ext_glGetBufferPointerv( void *args )
 {
     struct glGetBufferPointerv_params *params = args;
     const struct opengl_funcs *funcs = params->teb->glTable;
@@ -8744,7 +8744,7 @@ NTSTATUS ext_glGetBufferPointerv( void *args )
     return STATUS_SUCCESS;
 }
 
-NTSTATUS ext_glGetBufferPointervARB( void *args )
+static NTSTATUS ext_glGetBufferPointervARB( void *args )
 {
     struct glGetBufferPointervARB_params *params = args;
     const struct opengl_funcs *funcs = params->teb->glTable;
@@ -9784,7 +9784,7 @@ static NTSTATUS ext_glGetNamedBufferParameterui64vNV( void *args )
     return STATUS_SUCCESS;
 }
 
-NTSTATUS ext_glGetNamedBufferPointerv( void *args )
+static NTSTATUS ext_glGetNamedBufferPointerv( void *args )
 {
     struct glGetNamedBufferPointerv_params *params = args;
     const struct opengl_funcs *funcs = params->teb->glTable;
@@ -9792,7 +9792,7 @@ NTSTATUS ext_glGetNamedBufferPointerv( void *args )
     return STATUS_SUCCESS;
 }
 
-NTSTATUS ext_glGetNamedBufferPointervEXT( void *args )
+static NTSTATUS ext_glGetNamedBufferPointervEXT( void *args )
 {
     struct glGetNamedBufferPointervEXT_params *params = args;
     const struct opengl_funcs *funcs = params->teb->glTable;
@@ -16183,7 +16183,7 @@ static NTSTATUS ext_glPathGlyphIndexArrayNV( void *args )
     return STATUS_SUCCESS;
 }
 
-NTSTATUS ext_glPathGlyphIndexRangeNV( void *args )
+static NTSTATUS ext_glPathGlyphIndexRangeNV( void *args )
 {
     struct glPathGlyphIndexRangeNV_params *params = args;
     const struct opengl_funcs *funcs = params->teb->glTable;
@@ -26669,7 +26669,7 @@ static NTSTATUS ext_wglCreateContextAttribsARB( void *args )
     return STATUS_SUCCESS;
 }
 
-NTSTATUS ext_wglCreatePbufferARB( void *args )
+static NTSTATUS ext_wglCreatePbufferARB( void *args )
 {
     struct wglCreatePbufferARB_params *params = args;
     const struct opengl_funcs *funcs = get_dc_funcs( params->hDC );
@@ -26714,7 +26714,7 @@ static NTSTATUS ext_wglGetExtensionsStringEXT( void *args )
     return STATUS_SUCCESS;
 }
 
-NTSTATUS ext_wglGetPbufferDCARB( void *args )
+static NTSTATUS ext_wglGetPbufferDCARB( void *args )
 {
     struct wglGetPbufferDCARB_params *params = args;
     pthread_mutex_lock( &wgl_lock );
@@ -29959,6 +29959,19 @@ static NTSTATUS wow64_wgl_wglGetPixelFormat( void *args )
     const struct opengl_funcs *funcs = get_dc_funcs( ULongToPtr(params->hdc) );
     if (!funcs || !funcs->p_wglGetPixelFormat) return STATUS_NOT_IMPLEMENTED;
     params->ret = funcs->p_wglGetPixelFormat( ULongToPtr(params->hdc) );
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS wow64_wgl_wglGetProcAddress( void *args )
+{
+    struct
+    {
+        PTR32 teb;
+        PTR32 lpszProc;
+        PTR32 ret;
+    } *params = args;
+    TEB *teb = get_teb64( params->teb );
+    params->ret = (UINT_PTR)wrap_wglGetProcAddress( teb, ULongToPtr(params->lpszProc) );
     return STATUS_SUCCESS;
 }
 
@@ -45543,6 +45556,34 @@ static NTSTATUS wow64_ext_glGetBufferParameterui64vNV( void *args )
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS wow64_ext_glGetBufferPointerv( void *args )
+{
+    struct
+    {
+        PTR32 teb;
+        GLenum target;
+        GLenum pname;
+        PTR32 params;
+    } *params = args;
+    TEB *teb = get_teb64( params->teb );
+    wow64_glGetBufferPointerv( teb, params->target, params->pname, ULongToPtr(params->params) );
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS wow64_ext_glGetBufferPointervARB( void *args )
+{
+    struct
+    {
+        PTR32 teb;
+        GLenum target;
+        GLenum pname;
+        PTR32 params;
+    } *params = args;
+    TEB *teb = get_teb64( params->teb );
+    wow64_glGetBufferPointervARB( teb, params->target, params->pname, ULongToPtr(params->params) );
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS wow64_ext_glGetBufferSubData( void *args )
 {
     struct
@@ -47548,6 +47589,34 @@ static NTSTATUS wow64_ext_glGetNamedBufferParameterui64vNV( void *args )
     TEB *teb = get_teb64( params->teb );
     const struct opengl_funcs *funcs = teb->glTable;
     funcs->p_glGetNamedBufferParameterui64vNV( params->buffer, params->pname, ULongToPtr(params->params) );
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS wow64_ext_glGetNamedBufferPointerv( void *args )
+{
+    struct
+    {
+        PTR32 teb;
+        GLuint buffer;
+        GLenum pname;
+        PTR32 params;
+    } *params = args;
+    TEB *teb = get_teb64( params->teb );
+    wow64_glGetNamedBufferPointerv( teb, params->buffer, params->pname, ULongToPtr(params->params) );
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS wow64_ext_glGetNamedBufferPointervEXT( void *args )
+{
+    struct
+    {
+        PTR32 teb;
+        GLuint buffer;
+        GLenum pname;
+        PTR32 params;
+    } *params = args;
+    TEB *teb = get_teb64( params->teb );
+    wow64_glGetNamedBufferPointervEXT( teb, params->buffer, params->pname, ULongToPtr(params->params) );
     return STATUS_SUCCESS;
 }
 
@@ -59451,6 +59520,26 @@ static NTSTATUS wow64_ext_glPathGlyphIndexArrayNV( void *args )
     TEB *teb = get_teb64( params->teb );
     const struct opengl_funcs *funcs = teb->glTable;
     params->ret = funcs->p_glPathGlyphIndexArrayNV( params->firstPathName, params->fontTarget, ULongToPtr(params->fontName), params->fontStyle, params->firstGlyphIndex, params->numGlyphs, params->pathParameterTemplate, params->emScale );
+    set_context_attribute( teb, -1 /* unsupported */, NULL, 0 );
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS wow64_ext_glPathGlyphIndexRangeNV( void *args )
+{
+    struct
+    {
+        PTR32 teb;
+        GLenum fontTarget;
+        PTR32 fontName;
+        GLbitfield fontStyle;
+        GLuint pathParameterTemplate;
+        GLfloat emScale;
+        PTR32 baseAndCount;
+        GLenum ret;
+    } *params = args;
+    TEB *teb = get_teb64( params->teb );
+    const struct opengl_funcs *funcs = teb->glTable;
+    params->ret = funcs->p_glPathGlyphIndexRangeNV( params->fontTarget, ULongToPtr(params->fontName), params->fontStyle, params->pathParameterTemplate, params->emScale, ULongToPtr(params->baseAndCount) );
     set_context_attribute( teb, -1 /* unsupported */, NULL, 0 );
     return STATUS_SUCCESS;
 }
@@ -78544,6 +78633,27 @@ static NTSTATUS wow64_ext_wglCreateContextAttribsARB( void *args )
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS wow64_ext_wglCreatePbufferARB( void *args )
+{
+    struct
+    {
+        PTR32 teb;
+        PTR32 hDC;
+        int iPixelFormat;
+        int iWidth;
+        int iHeight;
+        PTR32 piAttribList;
+        PTR32 ret;
+    } *params = args;
+    TEB *teb = get_teb64( params->teb );
+    const struct opengl_funcs *funcs = get_dc_funcs( ULongToPtr(params->hDC) );
+    if (!funcs || !funcs->p_wglCreatePbufferARB) return STATUS_NOT_IMPLEMENTED;
+    pthread_mutex_lock( &wgl_lock );
+    params->ret = (UINT_PTR)wrap_wglCreatePbufferARB( teb, ULongToPtr(params->hDC), params->iPixelFormat, params->iWidth, params->iHeight, ULongToPtr(params->piAttribList) );
+    pthread_mutex_unlock( &wgl_lock );
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS wow64_ext_wglDestroyPbufferARB( void *args )
 {
     struct
@@ -78599,6 +78709,21 @@ static NTSTATUS wow64_ext_wglGetExtensionsStringEXT( void *args )
     const struct opengl_funcs *funcs = teb->glTable;
     ret = funcs->p_wglGetExtensionsStringEXT();
     return return_wow64_string( ret, &params->ret );
+}
+
+static NTSTATUS wow64_ext_wglGetPbufferDCARB( void *args )
+{
+    struct
+    {
+        PTR32 teb;
+        PTR32 hPbuffer;
+        PTR32 ret;
+    } *params = args;
+    TEB *teb = get_teb64( params->teb );
+    pthread_mutex_lock( &wgl_lock );
+    params->ret = (UINT_PTR)wrap_wglGetPbufferDCARB( teb, ULongToPtr(params->hPbuffer) );
+    pthread_mutex_unlock( &wgl_lock );
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS wow64_ext_wglGetPixelFormatAttribfvARB( void *args )
