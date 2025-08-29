@@ -89,6 +89,7 @@ struct thread_apc
     struct list         entry;    /* queue linked list */
     struct thread      *caller;   /* thread that queued this apc */
     struct object      *owner;    /* object that queued this apc */
+    struct reserve     *reserve;  /* reserve object associated with apc object */
     int                 executed; /* has it been executed by the client? */
     union apc_call      call;     /* call arguments */
     union apc_result    result;   /* call results once executed */
@@ -537,6 +538,7 @@ struct thread *create_thread( int fd, struct process *process, const struct secu
     thread->process = (struct process *)grab_object( process );
     thread->desktop = 0;
     thread->affinity = process->affinity;
+    thread->disable_boost = process->disable_boost;
     if (!current) current = thread;
 
     list_add_tail( &thread_list, &thread->entry );
@@ -709,6 +711,7 @@ static void thread_apc_destroy( struct object *obj )
         release_object( apc->owner );
     }
     if (apc->sync) release_object( apc->sync );
+    reserve_obj_unbind( apc->reserve );
 }
 
 /* queue an async procedure call */
@@ -723,6 +726,7 @@ static struct thread_apc *create_apc( struct object *owner, const union apc_call
         else apc->call.type = APC_NONE;
         apc->caller      = NULL;
         apc->owner       = owner;
+        apc->reserve     = NULL;
         apc->executed    = 0;
         apc->result.type = APC_NONE;
         if (owner) grab_object( owner );
@@ -2029,7 +2033,20 @@ DECL_HANDLER(queue_apc)
     {
     case APC_NONE:
     case APC_USER:
+        if (req->reserve_handle &&
+            !(apc->reserve = reserve_obj_associate_apc( current->process, req->reserve_handle, &apc->obj )))
+        {
+            release_object( apc );
+            return;
+        }
         thread = get_thread_from_handle( req->handle, THREAD_SET_CONTEXT );
+        if (thread && call && call->user.flags & SERVER_USER_APC_SPECIAL && is_wow64_process( thread->process ))
+        {
+            release_object( apc );
+            release_object( thread );
+            set_error( STATUS_NOT_SUPPORTED );
+            return;
+        }
         break;
     case APC_VIRTUAL_ALLOC:
     case APC_VIRTUAL_ALLOC_EX:
