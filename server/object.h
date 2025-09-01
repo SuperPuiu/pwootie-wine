@@ -240,6 +240,14 @@ extern void reset_event( struct event *event );
 
 extern void abandon_mutexes( struct thread *thread );
 
+/* in-process synchronization functions */
+
+struct inproc_sync;
+extern int get_inproc_device_fd(void);
+extern struct inproc_sync *create_inproc_event_sync( int manual, int signaled );
+extern void signal_inproc_sync( struct inproc_sync *sync );
+extern void reset_inproc_sync( struct inproc_sync *sync );
+
 /* serial functions */
 
 int get_serial_async_timeout(struct object *obj, int type, int count);

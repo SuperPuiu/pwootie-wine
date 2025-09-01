@@ -2803,9 +2803,9 @@ static BOOL node_builder_parse(struct node_builder *builder, unsigned precedence
             {
                 ERROR_IF(tkn != TKN_EOL);
                 node_builder_consume(builder);
-                /* FIXME potential empty here?? */
                 ERROR_IF(!node_builder_parse(builder, 0, &right));
-                left = node_create_binary(CMD_CONCAT, left, right);
+                if (right)
+                    left = node_create_binary(CMD_CONCAT, left, right);
             }
             node_builder_consume(builder);
             /* if we had redirection before '(', add them up front */
@@ -2841,7 +2841,8 @@ static BOOL node_builder_parse(struct node_builder *builder, unsigned precedence
                     break;
                 }
                 ERROR_IF(!node_builder_parse(builder, token_get_precedence(tkn), &right));
-                left = node_create_binary(CMD_CONCAT, left, right);
+                if (right)
+                    left = node_create_binary(CMD_CONCAT, left, right);
             }
             break;
         case TKN_AMPAMP:
@@ -3196,7 +3197,7 @@ static WCHAR *fetch_next_line(BOOL first_line, WCHAR* buffer)
 
     buffer = WCMD_skip_leading_spaces(buffer);
     /* Show prompt before batch line IF echo is on and in batch program */
-    if (WCMD_is_in_context(NULL) && echo_mode && *buffer && *buffer != '@')
+    if (WCMD_is_in_context(NULL) && echo_mode && *buffer && *buffer != L'@' && *buffer != L':')
     {
         if (first_line)
         {
@@ -3552,6 +3553,9 @@ enum read_parse_line WCMD_ReadAndParseLine(CMD_NODE **output)
                                  curRedirs, &curRedirsLen,
                                  &curCopyTo, &curLen);
               node_builder_push_token(&builder, TKN_CLOSEPAR);
+          } else if (curStringLen == 0 && curCopyTo == curString) {
+              /* unmatched closing ')': silently skip rest of line */
+              curPos += wcslen(curPos) - 1;
           } else {
               curCopyTo[(*curLen)++] = *curPos;
           }

@@ -1148,8 +1148,10 @@ struct init_first_thread_reply
     thread_id_t  tid;
     timeout_t    server_start;
     unsigned int session_id;
+    obj_handle_t inproc_device;
     data_size_t  info_size;
     /* VARARG(machines,ushorts); */
+    char __pad_36[4];
 };
 
 
@@ -5954,6 +5956,26 @@ struct set_keyboard_repeat_reply
 };
 
 
+enum inproc_sync_type
+{
+    INPROC_SYNC_UNKNOWN = 0,
+    INPROC_SYNC_EVENT = 1,
+};
+
+
+struct get_inproc_sync_fd_request
+{
+    struct request_header __header;
+    obj_handle_t handle;
+};
+struct get_inproc_sync_fd_reply
+{
+    struct reply_header __header;
+    int           type;
+    unsigned int access;
+};
+
+
 enum request
 {
     REQ_new_process,
@@ -6253,6 +6275,7 @@ enum request
     REQ_get_next_process,
     REQ_get_next_thread,
     REQ_set_keyboard_repeat,
+    REQ_get_inproc_sync_fd,
     REQ_NB_REQUESTS
 };
 
@@ -6557,6 +6580,7 @@ union generic_request
     struct get_next_process_request get_next_process_request;
     struct get_next_thread_request get_next_thread_request;
     struct set_keyboard_repeat_request set_keyboard_repeat_request;
+    struct get_inproc_sync_fd_request get_inproc_sync_fd_request;
 };
 union generic_reply
 {
@@ -6859,8 +6883,9 @@ union generic_reply
     struct get_next_process_reply get_next_process_reply;
     struct get_next_thread_reply get_next_thread_reply;
     struct set_keyboard_repeat_reply set_keyboard_repeat_reply;
+    struct get_inproc_sync_fd_reply get_inproc_sync_fd_reply;
 };
 
-#define SERVER_PROTOCOL_VERSION 890
+#define SERVER_PROTOCOL_VERSION 893
 
 #endif /* __WINE_WINE_SERVER_PROTOCOL_H */

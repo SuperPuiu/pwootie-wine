@@ -76,6 +76,7 @@
 #define MSHTML_E_INVALID_PROPERTY 0x800a01b6
 #define MSHTML_E_INVALID_ACTION   0x800a01bd
 #define MSHTML_E_NODOC            0x800a025c
+#define MSHTML_E_SYNTAX           0x800a03ea
 #define MSHTML_E_NOT_FUNC         0x800a138a
 
 typedef struct HTMLWindow HTMLWindow;
@@ -108,6 +109,7 @@ struct constructor;
     XDIID(DispDOMStorageEvent) \
     XDIID(DispDOMUIEvent) \
     XDIID(DispDOMDocumentType) \
+    XDIID(DispDOMParser) \
     XDIID(DispHTMLAnchorElement) \
     XDIID(DispHTMLAreaElement) \
     XDIID(DispHTMLAttributeCollection) \
@@ -172,6 +174,7 @@ struct constructor;
     XIID(IDOMStorageEvent) \
     XIID(IDOMUIEvent) \
     XIID(IDOMDocumentType) \
+    XIID(IDOMParser) \
     XIID(IDocumentEvent) \
     XIID(IDocumentRange) \
     XIID(IDocumentSelector) \
@@ -429,6 +432,7 @@ typedef struct {
     X(Console)                             \
     X(CustomEvent)                         \
     X(DOMImplementation)                   \
+    X(DOMParser)                           \
     X(DOMTokenList)                        \
     X(Document)                            \
     X(DocumentFragment)                    \
@@ -507,6 +511,7 @@ typedef struct {
     X(TextRange)                           \
     X(UIEvent)                             \
     X(Window)                              \
+    X(XMLDocument)                         \
     X(XMLHttpRequest)
 
 typedef enum {
@@ -1280,6 +1285,7 @@ HRESULT nsnode_to_nsstring(nsIDOMNode*,nsAString*);
 void setup_editor_controller(GeckoBrowser*);
 nsresult get_nsinterface(nsISupports*,REFIID,void**);
 nsIWritableVariant *create_nsvariant(void);
+nsIDOMParser *create_nsdomparser(nsIDOMWindow*);
 nsIXMLHttpRequest *create_nsxhr(nsIDOMWindow *nswindow);
 nsresult create_nsfile(const PRUnichar*,nsIFile**);
 char *get_nscategory_entry(const char*,const char*);
